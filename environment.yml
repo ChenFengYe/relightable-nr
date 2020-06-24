@@ -1,7 +1,12 @@
 name: relightable-nr
 channels:
-  - pytorch
-  - defaults
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/
+#ssl_verify: true
+#channels:
+#  - pytorch
+#  - defaults
 dependencies:
   - _libgcc_mutex=0.1=main
   - attrs=19.1.0=py37_1
@@ -13,7 +18,7 @@ dependencies:
   - cairo=1.14.12=h8948797_3
   - certifi=2019.6.16=py37_1
   - cffi=1.12.3=py37h2e261b9_0
-  - cudatoolkit=9.0=h13b8566_0
+#  - cudatoolkit=9.0=h13b8566_0
   - decorator=4.4.0=py37_1
   - defusedxml=0.6.0=py_0
   - entrypoints=0.3=py37_0
@@ -87,7 +92,7 @@ dependencies:
   - pyrsistent=0.14.11=py37h7b6447c_0
   - python=3.7.4=h265db76_1
   - python-dateutil=2.8.0=py37_0
-  - pytorch=1.1.0=py3.7_cuda9.0.176_cudnn7.5.1_0
+#  - pytorch=1.1.0=py3.7_cuda9.0.176_cudnn7.5.1_0
   - pyzmq=18.1.0=py37he6710b0_0
   - readline=7.0=h7b6447c_5
   - send2trash=1.5.0=py37_0
@@ -97,7 +102,7 @@ dependencies:
   - terminado=0.8.2=py37_0
   - testpath=0.4.2=py37_0
   - tk=8.6.8=hbc83047_0
-  - torchvision=0.3.0=py37_cu9.0.176_1
+#  - torchvision=0.3.0=py37_cu9.0.176_1
   - tornado=6.0.3=py37h7b6447c_0
   - traitlets=4.3.2=py37_0
   - wcwidth=0.1.7=py37_0
@@ -161,4 +166,4 @@ dependencies:
     - werkzeug==0.16.0
     - wrapt==1.11.2
     - xarray==0.13.0
-prefix: /root/anaconda3/envs/relightable-nr
+prefix: /data/new_disk2/chenxin/Miniconda3/envs/relightable-nr

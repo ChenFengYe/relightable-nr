@@ -115,13 +115,14 @@ for i in range(num_view):
 
     print('View', i)
     img_w, img_h = img_hws[i, 1], img_hws[i, 0]
+    print([img_w, img_h])
     pose = np.dot(poses[i, ...], global_RT_inv)
     proj = projs[i, ...]
 
     if opt.img_suffix == '.exr':
         img = cv2.imread(img_dir + ('/%03d' % i) + opt.img_suffix, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
     else:
-        img = cv2.imread(img_dir + ('/%06d' % i) + opt.img_suffix, cv2.IMREAD_UNCHANGED).astype(np.float32)[:, :, :3] / 255.
+        img = cv2.imread(img_dir + ('/%03d' % i) + opt.img_suffix, cv2.IMREAD_UNCHANGED).astype(np.float32)[:, :, :3] / 255.
     
     vertice = np.dot(pose, vertices)
     vertice = np.dot(proj, vertice[:3])
@@ -133,6 +134,7 @@ for i in range(num_view):
     vertice[1, vertice[1] > (int(img_h) - 1)] = int(img_h) - 1
 
     mask = np.zeros((int(img_h), int(img_w)))
+    
     mask = drawMask(mask, mesh.faces, vertice[:2])
     kernel = np.ones((17, 17), np.uint8)
     mask = cv2.resize(cv2.dilate(cv2.resize(mask, (512, 512)), kernel), (int(img_w), int(img_h)))
@@ -146,6 +148,8 @@ for i in range(num_view):
     lp_samples_uv[1] = (lp_samples_uv[1] * (opt.lp_h)).clip(max = opt.lp_h - 1.0)
     lp_samples_uv = np.round(lp_samples_uv).astype('int')
 
+    print(np.shape(mask))
+    print(np.shape(img))
     env[lp_samples_uv[1], lp_samples_uv[0]] += img[mask][:, :3]
     count[lp_samples_uv[1], lp_samples_uv[0]] += 1
     

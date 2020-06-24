@@ -48,7 +48,8 @@ obj_name = opt.obj_fp.split('/')[-1].split('.')[0]
 
 print('\n'.join(["%s: %s" % (key, value) for key, value in vars(opt).items()]))
 
-os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu_id
+#os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu_id
+torch.cuda.set_device(int(opt.gpu_id))
 device = torch.device('cuda')
 
 # load global_RT
