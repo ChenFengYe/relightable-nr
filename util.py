@@ -23,13 +23,16 @@ def custom_load(models, names, path, strict = True):
         names = [names]
     assert len(models) == len(names)
 
-    whole_dict = torch.load(path)
+    #whole_dict = torch.load(path, map_location='cpu')
+    whole_dict = torch.load(path, map_location='cpu')
 
     for i in range(len(models)):
         # create new OrderedDict that does not contain `module.`
         new_state_dict = OrderedDict()
         for k, v in whole_dict[names[i]].items():
-            name = k.replace("module.", "")
+            name = k
+            #name = k.replace("submodule.", "")
+            #name = name.replace("module.", "")
             new_state_dict[name] = v
 
         models[i].load_state_dict(new_state_dict, strict = strict)

@@ -98,7 +98,7 @@ else:
     #os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu_id
     #device = torch.device('cuda')
     torch.cuda.set_device(int(opt.gpu_id))
-    device = torch.device('cuda:1')
+    device = torch.device('cuda:'+ opt.gpu_id)
 
 # load texture
 if opt.tex_fp is not None:

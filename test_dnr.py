@@ -134,8 +134,17 @@ if opt.gpu_id != '':
 # set mode
 texture_mapper.train()
 render_net.train()
+
+texture_mapper.eval()
+render_net.eval()
 rasterizer.eval()
 
+# fix test 
+def set_bn_train(m):
+    if type(m) == torch.nn.BatchNorm2d:
+        m.train()
+
+render_net.apply(set_bn_train)
 
 def main():
     view_dataset.buffer_all()
