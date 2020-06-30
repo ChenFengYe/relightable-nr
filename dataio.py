@@ -38,10 +38,10 @@ class ViewDataset():
         self.img_gamma = img_gamma
         self.multi_frame = multi_frame
         self.frame_gap = frame_gap
-        self.frame_idxs = []
+        self.frame_idxs = []  # multi frame name
         self.frame_num = 1
         
-        self.cam_idxs = []
+        # self.cam_idxs = []
 
         if not os.path.isdir(root_dir):
             raise ValueError("Error! root dir is wrong")
@@ -71,9 +71,9 @@ class ViewDataset():
             for (i, img_folder) in enumerate(sorted(os.listdir(self.img_dir))):
                 #if not i % self.frame_gap:
 
-                run_iter = 6
-                if int(img_folder) > 160+30*run_iter and int(img_folder) <= 160+30*(run_iter+1):
-                #if int(img_folder) == 290 or int(img_folder) == 300 or int(img_folder) == 310 :
+                #run_iter = 6
+                #if int(img_folder) > 160+30*run_iter and int(img_folder) <= 160+30*(run_iter+1):
+                if int(img_folder) == 290 or int(img_folder) == 300 or int(img_folder) == 310 :
                     print(int(img_folder))
                     self.frame_idxs.append(int(img_folder))
                     frame_num = frame_num + 1
@@ -152,16 +152,13 @@ class ViewDataset():
                 keep_idx.append(choose_idx)
             else:
                 raise ValueError("Unknown sampling pattern!")
-
+        self.keep_idx = np.array(keep_idx)
         if self.calib_format == 'convert':
-            # np_cam_idxs = np.array(self.cam_idxs)
-            # print(np_cam_idxs)
-            # np_keep_idx = np_cam_idxs[np.array(keep_idx)%self.cam_num]
-            np_keep_idx = np.array(keep_idx)%self.cam_num
-            self.calib['img_hws'] = self.calib['img_hws'][np_keep_idx, ...]
-            self.calib['projs'] = self.calib['projs'][np_keep_idx, ...]
-            self.calib['poses'] = self.calib['poses'][np_keep_idx, ...]
-            self.calib['dist_coeffs'] = self.calib['dist_coeffs'][np_keep_idx, ...]
+            cam_idx = self.keep_idx % self.cam_num
+            self.calib['img_hws'] = self.calib['img_hws'][cam_idx, ...]
+            self.calib['projs'] = self.calib['projs'][cam_idx, ...]
+            self.calib['poses'] = self.calib['poses'][cam_idx, ...]
+            self.calib['dist_coeffs'] = self.calib['dist_coeffs'][cam_idx, ...]
 
         # get mapping from img_fn to idx and vice versa
         self.img_fn2idx = {}
@@ -195,7 +192,7 @@ class ViewDataset():
     def read_view(self, idx):
         img_fp = self.img_fp_all[idx]
         img_fn = os.path.split(img_fp)[-1]
-
+    
         # image size
         if self.calib_format == 'convert':
             img_hw = self.calib['img_hws'][idx, :]
@@ -234,6 +231,10 @@ class ViewDataset():
         proj_inv = numpy.linalg.inv(proj)
         R_inv = pose[:3, :3].transpose()
 
+        frame_idx = []
+        if self.multi_frame:
+            frame_idx = self.frame_idxs[self.keep_idx[idx] // self.cam_num]
+
         view = {'proj_orig': torch.from_numpy(proj_orig.astype(np.float32)),
                 'proj': torch.from_numpy(proj.astype(np.float32)),
                 'pose': torch.from_numpy(pose.astype(np.float32)),
@@ -244,6 +245,7 @@ class ViewDataset():
                 'proj_inv': torch.from_numpy(proj_inv.astype(np.float32)),
                 'R_inv': torch.from_numpy(R_inv.astype(np.float32)),
                 'idx': idx,
+                'f_idx': frame_idx,
                 'img_fn': img_fn}
 
         if self.load_img:
@@ -254,7 +256,6 @@ class ViewDataset():
             precomp_low_dir = self.precomp_low_dir
             precomp_high_dir = self.precomp_high_dir
             if self.multi_frame:
-                frame_idx = self.frame_idxs[idx // self.cam_num]
                 precomp_low_dir = precomp_low_dir % frame_idx
                 precomp_high_dir = precomp_high_dir % frame_idx
 
@@ -284,6 +285,28 @@ class ViewDataset():
             view['reflect_dir_map'] = torch.from_numpy(reflect_dir_map)
             alpha_map = cv2.imread(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'alpha_map', img_fn.split('.')[0] + '.png'), cv2.IMREAD_UNCHANGED).astype(np.float32) / 255.0
             view['alpha_map'] = torch.from_numpy(alpha_map)
+
+            # print(idx)
+            # alpha_map_fp = os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'alpha_map', img_fn.split('.')[0] + '.png')
+            # print('----------------------')
+            # print(img_fp)
+            # print(alpha_map_fp)
+
+            # Data checker -  For debugging
+            # image size
+            # if view['img_gt'].shape[1:2] != view['uv_map'].shape[0:1]:
+            #     print(view['img_gt'].shape)
+            #     print(view['uv_map'].shape)
+            #     raise ValueError("Image and uv map have different size!")
+
+            # print(type((view['img_gt'] * (1 - view['alpha_map']))))
+            # cv2.imread('/data/chenxin/relightable-nr/tmp/'+)
+            # if not (view['img_gt'] * (1 - view['alpha_map'])).type(torch.uint8).any():
+            #     raise ValueError("Alpha map not correct!")
+            # if not (view['uv_map'] * (1-view['alpha_map'])).any():
+            #     print(alpha_map_fp)
+            #     print(uv_map_fp)
+            #     raise ValueError("Alpha map not correct. \n uv_path: "+ img_fp + "\n alpha map path:"+ alpha_map_fp)
 
         return view
 

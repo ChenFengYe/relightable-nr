@@ -91,7 +91,8 @@ view_dataset = dataio.ViewDataset(root_dir = opt.data_root,
                                 img_size = [opt.img_size, opt.img_size],
                                 sampling_pattern = opt.sampling_pattern,
                                 load_img = False,
-                                load_precompute = False
+                                load_precompute = False,
+                                multi_frame = opt.multi_frame
                                 )
 num_view = len(view_dataset)
 
@@ -118,31 +119,28 @@ render_net = network.RenderingNet(nf0 = opt.nf0,
                                 use_gcn = False)
 render_net.load_state_dict(new_state_dict, strict = False)
 
-# rasterizer
-rasterizer = network.Rasterizer(obj_fp = opt.obj_fp, img_size = opt.img_size, global_RT = global_RT)
+# interpolater
+interpolater = network.Interpolater()
 
 # move to device
 texture_mapper.to(device)
 render_net.to(device)
-rasterizer.cuda(0) # currently, rasterizer can only be put on gpu 0
+interpolater.to(device)
 
 # use multi-GPU
-if opt.gpu_id != '':
-    texture_mapper = nn.DataParallel(texture_mapper)
-    render_net = nn.DataParallel(render_net)
+# if opt.gpu_id != '':
+#     texture_mapper = nn.DataParallel(texture_mapper)
+#     render_net = nn.DataParallel(render_net)
 
 # set mode
-texture_mapper.train()
-render_net.train()
-
 texture_mapper.eval()
 render_net.eval()
-rasterizer.eval()
+interpolater.eval()
 
 # fix test 
-def set_bn_train(m):
-    if type(m) == torch.nn.BatchNorm2d:
-        m.train()
+# def set_bn_train(m):
+#     if type(m) == torch.nn.BatchNorm2d:
+#         m.train()
 
 render_net.apply(set_bn_train)
 
@@ -166,6 +164,7 @@ def main():
         out_file.write('\n'.join(["%s: %s" % (key, value) for key, value in vars(opt).items()]))
 
     print('Begin inference...')
+    cur_obj_fp = ''
     with torch.no_grad():
         for ithView in range(num_view):
             start = time.time()
@@ -176,6 +175,7 @@ def main():
             pose = view_trgt[0]['pose'].to(device)
             proj_inv = view_trgt[0]['proj_inv'].to(device)
             R_inv = view_trgt[0]['R_inv'].to(device)
+            coeffs = view_trgt[0]['dist_coeffs'].to(device)
 
             proj = proj[None, :]
             pose = pose[None, :]
@@ -183,10 +183,19 @@ def main():
             R_inv = R_inv[None, :]
 
             # rasterize
+            frame_idx = ithView
+            if opt.obj_fp%(frame_idx) != cur_obj_fp:
+                cur_obj_fp = opt.obj_fp%(frame_idx)
+                print('Reset Rasterizer to ' + cur_obj_fp)
+                rasterizer = network.Rasterizer(obj_fp = cur_obj_fp, img_size = opt.img_size, global_RT = global_RT)
+                rasterizer.to(device)
+                #rasterizer.cuda(0) # currently, rasterizer can only be put on gpu 0
+                rasterizer.eval()
+
             uv_map, alpha_map, face_index_map, weight_map, faces_v_idx, normal_map, normal_map_cam, faces_v, faces_vt, position_map, position_map_cam, depth, v_uvz, v_front_mask = \
-                rasterizer(proj = proj.cuda(0),
-                            pose = pose.cuda(0),
-                            dist_coeffs = None,
+                rasterizer(proj = proj,
+                            pose = pose,
+                            dist_coeffs = coeffs,
                             offset = None,
                             scale = None,
                             )
@@ -214,6 +223,11 @@ def main():
             img_max_val = 2.0
             outputs_final = (outputs_final * 0.5 + 0.5) * img_max_val # map to [0, img_max_val]
 
+            # apply alpha
+            for i in range(num_view):
+                outputs[i] = outputs[i] * alpha_map
+                img_gt[i] = img_gt[i] * alpha_map
+                
             # save
             cv2.imwrite(os.path.join(save_dir_img_est, str(ithView).zfill(5) + '.png'), outputs_final[0, :].permute((1, 2, 0)).cpu().detach().numpy()[:, :, ::-1] * 255.)
 
