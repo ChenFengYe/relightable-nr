@@ -73,6 +73,9 @@ parser.add_argument('--gpu_id', type=str, default='0,1,2,3',
 parser.add_argument('--log_freq', type=int, default=100,
                     help='Save tensorboard logs every X iterations.')
 parser.add_argument('--ckp_freq', type=int, default=1000, help='Save checkpoint every X iterations.')
+# multi frame
+parser.add_argument('--multi_frame', type=bool, default=False, help='Input dynamic frame')
+#parser.add_argument('--frame_gap', type=int, default=10, help='Input dynamic frame')
 
 opt = parser.parse_args()
 if opt.logging_root is None:
@@ -117,6 +120,7 @@ view_dataset = dataio.ViewDataset(root_dir = opt.data_root,
                                 precomp_high_dir = opt.precomp_dir,
                                 precomp_low_dir = opt.precomp_dir,
                                 img_gamma = opt.img_gamma,
+                                multi_frame = opt.multi_frame
                                 )
 
 # dataset for validation views
@@ -130,6 +134,7 @@ view_val_dataset = dataio.ViewDataset(root_dir = opt.data_root,
                                 precomp_high_dir = opt.precomp_dir,
                                 precomp_low_dir = opt.precomp_dir,
                                 img_gamma = opt.img_gamma,
+                                multi_frame = opt.multi_frame
                                 )
 num_view_val = len(view_val_dataset)
 
