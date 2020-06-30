@@ -21,7 +21,10 @@ class ViewDataset():
                  load_precompute = False,
                  precomp_high_dir = None,
                  precomp_low_dir = None,
-                 img_gamma = 1.0):
+                 img_gamma = 1.0,
+                 multi_frame = False,
+                 frame_gap = 10,
+                 ):
         super().__init__()
 
         self.root_dir = root_dir
@@ -33,6 +36,12 @@ class ViewDataset():
         self.precomp_high_dir = precomp_high_dir
         self.precomp_low_dir = precomp_low_dir
         self.img_gamma = img_gamma
+        self.multi_frame = multi_frame
+        self.frame_gap = frame_gap
+        self.frame_idxs = []
+        self.frame_num = 1
+        
+        self.cam_idxs = []
 
         if not os.path.isdir(root_dir):
             raise ValueError("Error! root dir is wrong")
@@ -52,18 +61,37 @@ class ViewDataset():
             raise ValueError('Unknown calib format')
         self.global_RT_inv = np.linalg.inv(self.global_RT)
 
+        # get frames
         # get path for all input images
-        if self.load_img:
+        self.img_fp_all = []
+        if self.load_img and not self.multi_frame:
             self.img_fp_all = sorted(data_util.glob_imgs(self.img_dir))
+        elif self.load_img and self.multi_frame:
+            frame_num = 0
+            for (i, img_folder) in enumerate(sorted(os.listdir(self.img_dir))):
+                if not i % self.frame_gap:
+                    if int(img_folder) == 300:
+                        print(int(img_folder))
+                        self.frame_idxs.append(int(img_folder))
+                        frame_num = frame_num + 1
+                           
+                        imgs_fp = sorted(data_util.glob_imgs(self.img_dir+'/'+img_folder))
+                        self.img_fp_all.extend(imgs_fp)
+                        # check resolution
+                        # for (iM,img_fp) in enumerate(imgs_fp):
+                        #         self.cam_idxs.append(iM)
+                        #         self.img_fp_all.append(img_fp)
+            self.frame_num = frame_num
         else:
             self.img_fp_all = ['x.x'] * num_view
 
         # get intrinsic/extrinsic of all input images
+        self.cam_num = len(self.calib['poses'])
         self.poses_all = []
         img_fp_all_new = []
         for idx in range(len(self.img_fp_all)):
             img_fn = os.path.split(self.img_fp_all[idx])[-1]
-            self.poses_all.append(self.calib['poses'][idx, :, :])
+            self.poses_all.append(self.calib['poses'][idx%self.cam_num, :, :]) # self.cam_idxs[idx%self.cam_num]
             img_fp_all_new.append(self.img_fp_all[idx])
 
         # remove views without calibration result
@@ -124,10 +152,14 @@ class ViewDataset():
                 raise ValueError("Unknown sampling pattern!")
 
         if self.calib_format == 'convert':
-            self.calib['img_hws'] = self.calib['img_hws'][keep_idx, ...]
-            self.calib['projs'] = self.calib['projs'][keep_idx, ...]
-            self.calib['poses'] = self.calib['poses'][keep_idx, ...]
-            self.calib['dist_coeffs'] = self.calib['dist_coeffs'][keep_idx, ...]
+            # np_cam_idxs = np.array(self.cam_idxs)
+            # print(np_cam_idxs)
+            # np_keep_idx = np_cam_idxs[np.array(keep_idx)%self.cam_num]
+            np_keep_idx = np.array(keep_idx)%self.cam_num
+            self.calib['img_hws'] = self.calib['img_hws'][np_keep_idx, ...]
+            self.calib['projs'] = self.calib['projs'][np_keep_idx, ...]
+            self.calib['poses'] = self.calib['poses'][np_keep_idx, ...]
+            self.calib['dist_coeffs'] = self.calib['dist_coeffs'][np_keep_idx, ...]
 
         # get mapping from img_fn to idx and vice versa
         self.img_fn2idx = {}
@@ -217,31 +249,38 @@ class ViewDataset():
 
         # load precomputed data
         if self.load_precompute:
+            precomp_low_dir = self.precomp_low_dir
+            precomp_high_dir = self.precomp_high_dir
+            if self.multi_frame:
+                frame_idx = self.frame_idxs[idx // self.cam_num]
+                precomp_low_dir = precomp_low_dir % frame_idx
+                precomp_high_dir = precomp_high_dir % frame_idx
+
             # cannot share across meshes
-            raster = scipy.io.loadmat(os.path.join(self.precomp_low_dir, 'resol_' + str(self.img_size[0]), 'raster', img_fn.split('.')[0] + '.mat'))
+            raster = scipy.io.loadmat(os.path.join(precomp_low_dir, 'resol_' + str(self.img_size[0]), 'raster', img_fn.split('.')[0] + '.mat'))
             view['face_index_map'] = torch.from_numpy(raster['face_index_map'])
             view['weight_map'] = torch.from_numpy(raster['weight_map'])
             view['faces_v_idx'] = torch.from_numpy(raster['faces_v_idx'])
             view['v_uvz'] = torch.from_numpy(raster['v_uvz'])
             view['v_front_mask'] = torch.from_numpy(raster['v_front_mask'])[0, :]
 
-            # can share across meshes
-            TBN_map = scipy.io.loadmat(os.path.join(self.precomp_high_dir, 'resol_' + str(self.img_size[0]), 'TBN_map', img_fn.split('.')[0] + '.mat'))['TBN_map']
+            # can share across meshes when only changing resolution
+            TBN_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'TBN_map', img_fn.split('.')[0] + '.mat'))['TBN_map']
             view['TBN_map'] = torch.from_numpy(TBN_map)
-            uv_map = scipy.io.loadmat(os.path.join(self.precomp_high_dir, 'resol_' + str(self.img_size[0]), 'uv_map', img_fn.split('.')[0] + '.mat'))['uv_map']
+            uv_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'uv_map', img_fn.split('.')[0] + '.mat'))['uv_map']
             uv_map = uv_map - np.floor(uv_map) # keep uv in [0, 1]
             view['uv_map'] = torch.from_numpy(uv_map)
-            normal_map = scipy.io.loadmat(os.path.join(self.precomp_high_dir, 'resol_' + str(self.img_size[0]), 'normal_map', img_fn.split('.')[0] + '.mat'))['normal_map']
+            normal_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'normal_map', img_fn.split('.')[0] + '.mat'))['normal_map']
             view['normal_map'] = torch.from_numpy(normal_map)
-            view_dir_map = scipy.io.loadmat(os.path.join(self.precomp_high_dir, 'resol_' + str(self.img_size[0]), 'view_dir_map', img_fn.split('.')[0] + '.mat'))['view_dir_map']
+            view_dir_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'view_dir_map', img_fn.split('.')[0] + '.mat'))['view_dir_map']
             view['view_dir_map'] = torch.from_numpy(view_dir_map)
-            view_dir_map_tangent = scipy.io.loadmat(os.path.join(self.precomp_high_dir, 'resol_' + str(self.img_size[0]), 'view_dir_map_tangent', img_fn.split('.')[0] + '.mat'))['view_dir_map_tangent']
+            view_dir_map_tangent = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'view_dir_map_tangent', img_fn.split('.')[0] + '.mat'))['view_dir_map_tangent']
             view['view_dir_map_tangent'] = torch.from_numpy(view_dir_map_tangent)
-            sh_basis_map = scipy.io.loadmat(os.path.join(self.precomp_high_dir, 'resol_' + str(self.img_size[0]), 'sh_basis_map', img_fn.split('.')[0] + '.mat'))['sh_basis_map'].astype(np.float32)
+            sh_basis_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'sh_basis_map', img_fn.split('.')[0] + '.mat'))['sh_basis_map'].astype(np.float32)
             view['sh_basis_map'] = torch.from_numpy(sh_basis_map)
-            reflect_dir_map = scipy.io.loadmat(os.path.join(self.precomp_high_dir, 'resol_' + str(self.img_size[0]), 'reflect_dir_map', img_fn.split('.')[0] + '.mat'))['reflect_dir_map']
+            reflect_dir_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'reflect_dir_map', img_fn.split('.')[0] + '.mat'))['reflect_dir_map']
             view['reflect_dir_map'] = torch.from_numpy(reflect_dir_map)
-            alpha_map = cv2.imread(os.path.join(self.precomp_high_dir, 'resol_' + str(self.img_size[0]), 'alpha_map', img_fn.split('.')[0] + '.png'), cv2.IMREAD_UNCHANGED).astype(np.float32) / 255.0
+            alpha_map = cv2.imread(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'alpha_map', img_fn.split('.')[0] + '.png'), cv2.IMREAD_UNCHANGED).astype(np.float32) / 255.0
             view['alpha_map'] = torch.from_numpy(alpha_map)
 
         return view
@@ -309,3 +348,4 @@ class LightProbeDataset():
     def __getitem__(self, idx):
         self.buffer_one(idx)
         return self.lp_all[idx]
+

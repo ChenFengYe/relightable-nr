@@ -1,11 +1,14 @@
-python train_dnr.py --data_root ./data/material_sphere_cx180 --img_dir _/rgb0 --img_size 512 \
---obj_fp _/mesh.obj \
+python train_dnr.py --data_root ./data/synthesis_gai --img_dir _/rgb0 --img_size 512 \
+--obj_fp _/mesh/%03d.obj \
 --texture_num_ch 24 \
---batch_size 2 --gpu_id 1 --sampling_pattern skipinv_10 --sampling_pattern_val skip_10 --val_freq 100 \
+--batch_size 3 --gpu_id 0 --sampling_pattern skipinv_10 --sampling_pattern_val skip_10 --val_freq 100 \
 --exp_name example \
---checkpoint ./data/material_sphere_cx180/logs/dnr/06-22_05-19-40_skipinv_10_material_sphere_cx180_example/model_epoch-1999_iter-30000.pth \
---start_epoch 2000 --max_epoch 10000
+--start_epoch 0 --max_epoch 10000 \
+--multi_frame True \
+--texture_size 1024
+#--checkpoint ./data/synthesis_gai/logs/dnr/06-28_18-38-28_skipinv_10_synthesis_gai_example/model_epoch-69_iter-15000.pth \
 
+# orig
 # python train_dnr.py --data_root ./data/material_sphere_cx180 --img_dir _/rgb0 --img_size 512 \
 # --obj_fp _/mesh.obj \
 # --texture_num_ch 24 \
