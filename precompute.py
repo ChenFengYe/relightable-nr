@@ -180,11 +180,9 @@ def main():
                           'v_uvz': v_uvz[0, :].cpu().detach().numpy(),
                           'v_front_mask': v_front_mask[0, :].cpu().detach().numpy()})
 
-
         if not opt.only_mesh_related:
             # save img_gt
             cv2.imwrite(os.path.join(save_dir_img_gt, img_fn + '.png'), img_gt[:, :, ::-1])
-            continue
             # compute TBN_map
             TBN_map = render.get_TBN_map(normal_map, face_index_map, faces_v = faces_v[0, :], faces_texcoord = faces_vt[0, :], tangent = None)
             # save TBN_map

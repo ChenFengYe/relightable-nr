@@ -41,7 +41,7 @@ class ViewDataset():
         self.frame_idxs = []
         self.frame_num = 1
         
-        self.cam_idxs = []
+        self.cam_idx = []
 
         if not os.path.isdir(root_dir):
             raise ValueError("Error! root dir is wrong")
@@ -69,17 +69,13 @@ class ViewDataset():
         elif self.load_img and self.multi_frame:
             frame_num = 0
             for (i, img_folder) in enumerate(sorted(os.listdir(self.img_dir))):
-                #if not i % self.frame_gap:
-                if int(img_folder) <= 160+30:
-                    print(int(img_folder))
-                    self.frame_idxs.append(int(img_folder))
-                    frame_num = frame_num + 1
-                    imgs_fp = sorted(data_util.glob_imgs(self.img_dir+'/'+img_folder))
-                    self.img_fp_all.extend(imgs_fp)
-                    # check resolution
-                    # for (iM,img_fp) in enumerate(imgs_fp):
-                    #         self.cam_idxs.append(iM)
-                    #         self.img_fp_all.append(img_fp)
+                if i % self.frame_gap:
+                    if int(img_folder) == 290 or int(img_folder) == 300 or int(img_folder) == 310:
+                	#if int(img_folder) == 200 or int(img_folder) == 210 or int(img_folder) == 220 or int(img_folder) == 230:
+                    # print(img_folder)
+                        self.frame_idxs.append(int(img_folder))
+                        frame_num = frame_num + 1
+                        self.img_fp_all.extend(sorted(data_util.glob_imgs(self.img_dir+'/'+img_folder)))
             self.frame_num = frame_num
         else:
             self.img_fp_all = ['x.x'] * num_view
@@ -90,7 +86,7 @@ class ViewDataset():
         img_fp_all_new = []
         for idx in range(len(self.img_fp_all)):
             img_fn = os.path.split(self.img_fp_all[idx])[-1]
-            self.poses_all.append(self.calib['poses'][idx%self.cam_num, :, :]) # self.cam_idxs[idx%self.cam_num]
+            self.poses_all.append(self.calib['poses'][idx%self.cam_num, :, :])
             img_fp_all_new.append(self.img_fp_all[idx])
 
         # remove views without calibration result
@@ -151,14 +147,11 @@ class ViewDataset():
                 raise ValueError("Unknown sampling pattern!")
 
         if self.calib_format == 'convert':
-            # np_cam_idxs = np.array(self.cam_idxs)
-            # print(np_cam_idxs)
-            # np_keep_idx = np_cam_idxs[np.array(keep_idx)%self.cam_num]
             np_keep_idx = np.array(keep_idx)%self.cam_num
-            self.calib['img_hws'] = self.calib['img_hws'][np_keep_idx, ...]
-            self.calib['projs'] = self.calib['projs'][np_keep_idx, ...]
-            self.calib['poses'] = self.calib['poses'][np_keep_idx, ...]
-            self.calib['dist_coeffs'] = self.calib['dist_coeffs'][np_keep_idx, ...]
+            self.calib['img_hws'] = self.calib['img_hws'][np_keep_idx%self.cam_num, ...]
+            self.calib['projs'] = self.calib['projs'][np_keep_idx%self.cam_num, ...]
+            self.calib['poses'] = self.calib['poses'][np_keep_idx%self.cam_num, ...]
+            self.calib['dist_coeffs'] = self.calib['dist_coeffs'][np_keep_idx%self.cam_num, ...]
 
         # get mapping from img_fn to idx and vice versa
         self.img_fn2idx = {}
@@ -347,4 +340,3 @@ class LightProbeDataset():
     def __getitem__(self, idx):
         self.buffer_one(idx)
         return self.lp_all[idx]
-
