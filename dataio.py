@@ -70,7 +70,10 @@ class ViewDataset():
             frame_num = 0
             for (i, img_folder) in enumerate(sorted(os.listdir(self.img_dir))):
                 #if not i % self.frame_gap:
-                if int(img_folder) <= 160+30:
+
+                run_iter = 6
+                if int(img_folder) > 160+30*run_iter and int(img_folder) <= 160+30*(run_iter+1):
+                #if int(img_folder) == 290 or int(img_folder) == 300 or int(img_folder) == 310 :
                     print(int(img_folder))
                     self.frame_idxs.append(int(img_folder))
                     frame_num = frame_num + 1
