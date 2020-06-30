@@ -322,12 +322,6 @@ def main():
                         uv_map = view_val_trgt[0]['uv_map'].to(device)  # [N, H, W, 2]
                         sh_basis_map = view_val_trgt[0]['sh_basis_map'].to(device)  # [N, H, W, 9]
                         alpha_map = view_val_trgt[0]['alpha_map'][:, None, :, :].to(device)  # [N, 1, H, W]
-                        print("------------training alpha shape")
-                        print(alpha_map.shape)
-                        print("------------training alpha shape")
-                        print("------------training img shape")
-                        print(view_val_trgt[i]['img_gt'])
-                        print("------------training img shape")
                         view_idx = view_val_trgt[0]['idx']
 
                         batch_size = alpha_map.shape[0]

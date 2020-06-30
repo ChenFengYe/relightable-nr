@@ -40,8 +40,7 @@ class ViewDataset():
         self.frame_gap = frame_gap
         self.frame_idxs = []  # multi frame name
         self.frame_num = 1
-        
-        # self.cam_idxs = []
+        self.cam_idxs = []
 
         if not os.path.isdir(root_dir):
             raise ValueError("Error! root dir is wrong")
@@ -70,30 +69,37 @@ class ViewDataset():
             frame_num = 0
             for (i, img_folder) in enumerate(sorted(os.listdir(self.img_dir))):
                 #if not i % self.frame_gap:
-
                 #run_iter = 6
                 #if int(img_folder) > 160+30*run_iter and int(img_folder) <= 160+30*(run_iter+1):
-                if int(img_folder) == 290 or int(img_folder) == 300 or int(img_folder) == 310 :
+                #if int(img_folder) == 290 or int(img_folder) == 300 or int(img_folder) == 310 :
+                if int(img_folder) == 160 :
                     print(int(img_folder))
                     self.frame_idxs.append(int(img_folder))
-                    frame_num = frame_num + 1
+                    frame_num = frame_num + 1                    
+
                     imgs_fp = sorted(data_util.glob_imgs(self.img_dir+'/'+img_folder))
-                    self.img_fp_all.extend(imgs_fp)
-                    # check resolution
-                    # for (iM,img_fp) in enumerate(imgs_fp):
-                    #         self.cam_idxs.append(iM)
-                    #         self.img_fp_all.append(img_fp)
+                    # select view
+                    for img_fp in imgs_fp:
+                        cam_idx = int(os.path.split(img_fp)[-1][:-4])
+                        # cam id begin with 0
+                        # if cam_idx == 53 :
+                        if 1 :
+                           self.cam_idxs.append(cam_idx)
+                           self.img_fp_all.append(img_fp)
+
             self.frame_num = frame_num
         else:
             self.img_fp_all = ['x.x'] * num_view
 
+        print(self.cam_idxs)
+        print(self.img_fp_all)
         # get intrinsic/extrinsic of all input images
         self.cam_num = len(self.calib['poses'])
         self.poses_all = []
         img_fp_all_new = []
         for idx in range(len(self.img_fp_all)):
             img_fn = os.path.split(self.img_fp_all[idx])[-1]
-            self.poses_all.append(self.calib['poses'][idx%self.cam_num, :, :]) # self.cam_idxs[idx%self.cam_num]
+            self.poses_all.append(self.calib['poses'][self.cam_idxs[idx], :, :])
             img_fp_all_new.append(self.img_fp_all[idx])
 
         # remove views without calibration result
@@ -152,21 +158,24 @@ class ViewDataset():
                 keep_idx.append(choose_idx)
             else:
                 raise ValueError("Unknown sampling pattern!")
+
         self.keep_idx = np.array(keep_idx)
+        self.cam_idxs = np.array(self.cam_idxs)
         if self.calib_format == 'convert':
-            cam_idx = self.keep_idx % self.cam_num
+            #cam_idx = self.keep_idx % self.cam_num            
+            cam_idx = self.cam_idxs[self.keep_idx]
             self.calib['img_hws'] = self.calib['img_hws'][cam_idx, ...]
             self.calib['projs'] = self.calib['projs'][cam_idx, ...]
             self.calib['poses'] = self.calib['poses'][cam_idx, ...]
             self.calib['dist_coeffs'] = self.calib['dist_coeffs'][cam_idx, ...]
 
         # get mapping from img_fn to idx and vice versa
-        self.img_fn2idx = {}
-        self.img_idx2fn = []
-        for idx in range(len(self.img_fp_all)):
-            img_fn = os.path.split(self.img_fp_all[idx])[-1]
-            self.img_fn2idx[img_fn] = idx
-            self.img_idx2fn.append(img_fn)
+        # self.img_fn2idx = {}
+        # self.img_idx2fn = []
+        # for idx in range(len(self.img_fp_all)):
+        #     img_fn = os.path.split(self.img_fp_all[idx])[-1]
+        #     self.img_fn2idx[img_fn] = idx
+        #     self.img_idx2fn.append(img_fn)
 
         print("*" * 100)
         print("Sampling pattern ", sampling_pattern)
@@ -286,11 +295,11 @@ class ViewDataset():
             alpha_map = cv2.imread(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'alpha_map', img_fn.split('.')[0] + '.png'), cv2.IMREAD_UNCHANGED).astype(np.float32) / 255.0
             view['alpha_map'] = torch.from_numpy(alpha_map)
 
-            # print(idx)
-            # alpha_map_fp = os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'alpha_map', img_fn.split('.')[0] + '.png')
-            # print('----------------------')
-            # print(img_fp)
-            # print(alpha_map_fp)
+            print('----------------------')
+            print(idx)
+            alpha_map_fp = os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'alpha_map', img_fn.split('.')[0] + '.png')
+            print(img_fp)
+            print(alpha_map_fp)
 
             # Data checker -  For debugging
             # image size
