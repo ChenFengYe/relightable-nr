@@ -88,8 +88,8 @@ def main():
         pose = view_trgt[0]['pose'].to(device)
         T = view_trgt[0]['pose'][:, :3, -1].to(device)
         img_fn = view_trgt[0]['img_fn'][0].split('.')[0]
-        # frame_idx = view_dataset.view_dataset.keep_id[idx] // view_dataset.cam_num
-        frame_idx = view_trgt[0]['f_idx'].cpu().detach().numpy().item()
+        # frame_idx = view_dataset.view_dataset.keep_id[idx] // view_dataset.num_view
+        frame_idx = view_trgt[0]['f_idx']
 
         # set save folder
         if opt.multi_frame:

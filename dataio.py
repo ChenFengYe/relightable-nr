@@ -15,7 +15,7 @@ class ViewDataset():
                  calib_format,
                  img_size,
                  sampling_pattern,
-                 load_img = True,
+                 is_train = True,
                  img_dir = None,
                  ignore_dist_coeffs = True,
                  load_precompute = False,
@@ -31,7 +31,7 @@ class ViewDataset():
         self.calib_format = calib_format
         self.img_size = img_size
         self.ignore_dist_coeffs = ignore_dist_coeffs
-        self.load_img = load_img
+        self.is_train = is_train
         self.load_precompute = load_precompute
         self.precomp_high_dir = precomp_high_dir
         self.precomp_low_dir = precomp_low_dir
@@ -46,7 +46,7 @@ class ViewDataset():
             raise ValueError("Error! root dir is wrong")
 
         self.img_dir = img_dir
-        if self.load_img and not os.path.isdir(self.img_dir):
+        if self.is_train and not os.path.isdir(self.img_dir):
             raise ValueError("Error! image dir is wrong")
 
         # load calibration data
@@ -55,7 +55,7 @@ class ViewDataset():
                 raise ValueError("Error! calib path is wrong")
             self.calib = scipy.io.loadmat(calib_path)
             self.global_RT = self.calib['global_RT']
-            num_view = self.calib['poses'].shape[0]
+            self.num_view = self.calib['poses'].shape[0]
         else:
             raise ValueError('Unknown calib format')
         self.global_RT_inv = np.linalg.inv(self.global_RT)
@@ -63,38 +63,44 @@ class ViewDataset():
         # get frames
         # get path for all input images
         self.img_fp_all = []
-        if self.load_img and not self.multi_frame:
-            self.img_fp_all = sorted(data_util.glob_imgs(self.img_dir))
-        elif self.load_img and self.multi_frame:
-            frame_num = 0
-            for (i, img_folder) in enumerate(sorted(os.listdir(self.img_dir))):
-                #if not i % self.frame_gap:
-                #run_iter = 6
-                #if int(img_folder) > 160+30*run_iter and int(img_folder) <= 160+30*(run_iter+1):
-                #if int(img_folder) == 290 or int(img_folder) == 300 or int(img_folder) == 310 :
-                if int(img_folder) == 160 :
-                    print(int(img_folder))
-                    self.frame_idxs.append(int(img_folder))
-                    frame_num = frame_num + 1                    
-
-                    imgs_fp = sorted(data_util.glob_imgs(self.img_dir+'/'+img_folder))
-                    # select view
-                    for img_fp in imgs_fp:
-                        cam_idx = int(os.path.split(img_fp)[-1][:-4])
-                        # cam id begin with 0
-                        # if cam_idx == 53 :
-                        if 1 :
-                           self.cam_idxs.append(cam_idx)
-                           self.img_fp_all.append(img_fp)
-
-            self.frame_num = frame_num
+        if self.is_train:
+            if self.multi_frame:
+                self.frame_num =  0
+                for (i, img_folder) in enumerate(sorted(os.listdir(self.img_dir))):
+                    #if not i % self.frame_gap:
+                    #run_iter = 6
+                    #if int(img_folder) > 160+30*run_iter and int(img_folder) <= 160+30*(run_iter+1):
+                    #if int(img_folder) == 290 or int(img_folder) == 300 or int(img_folder) == 310 :
+                    frame_idx = int(img_folder)
+                    if frame_idx == 160 :
+                        print(frame_idx)
+                        
+                        self.frame_num = self.frame_num + 1                    
+                        imgs_fp = sorted(data_util.glob_imgs(self.img_dir+'/'+img_folder))
+                        # select view
+                        for img_fp in imgs_fp:
+                            cam_idx = int(os.path.split(img_fp)[-1][:-4])
+                            # cam id begin with 0
+                            # if cam_idx == 53 :
+                            if 1 :
+                                self.frame_idxs.append(frame_idx)
+                                self.cam_idxs.append(cam_idx)
+                                self.img_fp_all.append(img_fp)            
+            else:
+                self.img_fp_all = sorted(data_util.glob_imgs(self.img_dir))            
+        # test
         else:
-            self.img_fp_all = ['x.x'] * num_view
+            self.img_fp_all = ['x.x'] * self.num_view
+            #self.frame_idxs = np.resize(range(160,351), self.num_view) # set dynamic frame
+            self.frame_idxs = np.resize([290,300,310], self.num_view) # set dynamic frame
+            self.cam_idxs = range(0,self.num_view)
 
         print(self.cam_idxs)
         print(self.img_fp_all)
+        print(self.frame_idxs)
+        
         # get intrinsic/extrinsic of all input images
-        self.cam_num = len(self.calib['poses'])
+        self.num_view = len(self.calib['poses'])
         self.poses_all = []
         img_fp_all_new = []
         for idx in range(len(self.img_fp_all)):
@@ -162,7 +168,7 @@ class ViewDataset():
         self.keep_idx = np.array(keep_idx)
         self.cam_idxs = np.array(self.cam_idxs)
         if self.calib_format == 'convert':
-            #cam_idx = self.keep_idx % self.cam_num            
+            #cam_idx = self.keep_idx % self.num_view            
             cam_idx = self.cam_idxs[self.keep_idx]
             self.calib['img_hws'] = self.calib['img_hws'][cam_idx, ...]
             self.calib['projs'] = self.calib['projs'][cam_idx, ...]
@@ -207,7 +213,7 @@ class ViewDataset():
             img_hw = self.calib['img_hws'][idx, :]
 
         # get view image
-        if self.load_img:
+        if self.is_train:
             img_gt, center_coord, center_coord_new, img_crop_size = data_util.load_img(img_fp, square_crop = True, downsampling_order = 1, target_size = self.img_size)
             img_gt = img_gt[:, :, :3]
             img_gt = img_gt.transpose(2,0,1)
@@ -242,7 +248,7 @@ class ViewDataset():
 
         frame_idx = []
         if self.multi_frame:
-            frame_idx = self.frame_idxs[self.keep_idx[idx] // self.cam_num]
+            frame_idx = self.frame_idxs[self.keep_idx[idx]]
 
         view = {'proj_orig': torch.from_numpy(proj_orig.astype(np.float32)),
                 'proj': torch.from_numpy(proj.astype(np.float32)),
@@ -257,7 +263,7 @@ class ViewDataset():
                 'f_idx': frame_idx,
                 'img_fn': img_fn}
 
-        if self.load_img:
+        if self.is_train:
             view['img_gt'] = torch.from_numpy(img_gt)
 
         # load precomputed data

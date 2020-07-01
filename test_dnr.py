@@ -34,6 +34,7 @@ parser.add_argument('--checkpoint_name', default='',
 parser.add_argument('--gpu_id', type=str, default='',
                     help='Cuda visible devices.')
 parser.add_argument('--force_recompute', default = False, type = lambda x: (str(x).lower() in ['true', '1']))
+parser.add_argument('--multi_frame', type=bool, default=False, help='Input dynamic frame')
 
 opt = parser.parse_args()
 checkpoint_fp = os.path.join(opt.checkpoint_dir, opt.checkpoint_name)
@@ -90,7 +91,7 @@ view_dataset = dataio.ViewDataset(root_dir = opt.data_root,
                                 calib_format = 'convert',
                                 img_size = [opt.img_size, opt.img_size],
                                 sampling_pattern = opt.sampling_pattern,
-                                load_img = False,
+                                is_train = False,
                                 load_precompute = False,
                                 multi_frame = opt.multi_frame
                                 )
@@ -122,6 +123,9 @@ render_net.load_state_dict(new_state_dict, strict = False)
 # interpolater
 interpolater = network.Interpolater()
 
+# rasterizer
+rasterizer = [] # load while testing
+
 # move to device
 texture_mapper.to(device)
 render_net.to(device)
@@ -141,8 +145,7 @@ interpolater.eval()
 # def set_bn_train(m):
 #     if type(m) == torch.nn.BatchNorm2d:
 #         m.train()
-
-render_net.apply(set_bn_train)
+# render_net.apply(set_bn_train)
 
 def main():
     view_dataset.buffer_all()
@@ -175,7 +178,8 @@ def main():
             pose = view_trgt[0]['pose'].to(device)
             proj_inv = view_trgt[0]['proj_inv'].to(device)
             R_inv = view_trgt[0]['R_inv'].to(device)
-            coeffs = view_trgt[0]['dist_coeffs'].to(device)
+            coeffs = view_trgt[0]['dist_coeffs'].reshape((1,-1)).to(device)
+            frame_idx = view_trgt[0]['f_idx']
 
             proj = proj[None, :]
             pose = pose[None, :]
@@ -183,7 +187,6 @@ def main():
             R_inv = R_inv[None, :]
 
             # rasterize
-            frame_idx = ithView
             if opt.obj_fp%(frame_idx) != cur_obj_fp:
                 cur_obj_fp = opt.obj_fp%(frame_idx)
                 print('Reset Rasterizer to ' + cur_obj_fp)
@@ -224,9 +227,7 @@ def main():
             outputs_final = (outputs_final * 0.5 + 0.5) * img_max_val # map to [0, img_max_val]
 
             # apply alpha
-            for i in range(num_view):
-                outputs[i] = outputs[i] * alpha_map
-                img_gt[i] = img_gt[i] * alpha_map
+            #outputs_final[0] = outputs_final[0] * alpha_map
                 
             # save
             cv2.imwrite(os.path.join(save_dir_img_est, str(ithView).zfill(5) + '.png'), outputs_final[0, :].permute((1, 2, 0)).cpu().detach().numpy()[:, :, ::-1] * 255.)
