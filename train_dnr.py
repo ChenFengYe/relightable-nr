@@ -75,6 +75,7 @@ parser.add_argument('--log_freq', type=int, default=100,
 parser.add_argument('--ckp_freq', type=int, default=1000, help='Save checkpoint every X iterations.')
 # multi frame
 parser.add_argument('--multi_frame', type=bool, default=False, help='Input dynamic frame')
+parser.add_argument('--preset_uv_path', type=str, default=None, help='Prset uv for all frame')
 #parser.add_argument('--frame_gap', type=int, default=10, help='Input dynamic frame')
 
 opt = parser.parse_args()
@@ -119,6 +120,7 @@ view_dataset = dataio.ViewDataset(root_dir = opt.data_root,
                                 load_precompute = True,
                                 precomp_high_dir = opt.precomp_dir,
                                 precomp_low_dir = opt.precomp_dir,
+                                preset_uv_path = opt.preset_uv_path,
                                 img_gamma = opt.img_gamma,
                                 multi_frame = opt.multi_frame
                                 )

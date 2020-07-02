@@ -6,7 +6,7 @@ import cv2
 import scipy.io
 
 import data_util
-
+import neural_renderer as nr
 
 class ViewDataset():
     def __init__(self,
@@ -21,6 +21,7 @@ class ViewDataset():
                  load_precompute = False,
                  precomp_high_dir = None,
                  precomp_low_dir = None,
+                 preset_uv_path = None,
                  img_gamma = 1.0,
                  multi_frame = False,
                  frame_gap = 10,
@@ -32,6 +33,7 @@ class ViewDataset():
         self.img_size = img_size
         self.ignore_dist_coeffs = ignore_dist_coeffs
         self.is_train = is_train
+        self.preset_uv_path = preset_uv_path
         self.load_precompute = load_precompute
         self.precomp_high_dir = precomp_high_dir
         self.precomp_low_dir = precomp_low_dir
@@ -41,6 +43,7 @@ class ViewDataset():
         self.frame_idxs = []  # multi frame name
         self.frame_num = 1
         self.cam_idxs = []
+        
 
         if not os.path.isdir(root_dir):
             raise ValueError("Error! root dir is wrong")
@@ -67,14 +70,14 @@ class ViewDataset():
             if self.multi_frame:
                 self.frame_num =  0
                 for (i, img_folder) in enumerate(sorted(os.listdir(self.img_dir))):
-                    #if not i % self.frame_gap:
-                    #run_iter = 6
-                    #if int(img_folder) > 160+30*run_iter and int(img_folder) <= 160+30*(run_iter+1):
-                    #if int(img_folder) == 290 or int(img_folder) == 300 or int(img_folder) == 310 :
                     frame_idx = int(img_folder)
-                    if frame_idx == 160 :
-                        print(frame_idx)
-                        
+                    #if not i % self.frame_gap:
+                    run_iter = 4
+                    if int(img_folder) > 20+30*run_iter and int(img_folder) <= 20+30*(run_iter+1):
+                    # if int(img_folder) > 160+30*run_iter and int(img_folder) <= 160+30*(run_iter+1):
+                    # if int(img_folder) == 290 or int(img_folder) == 300 or int(img_folder) == 310 :
+                    # if frame_idx == 20 :
+                        print(frame_idx)                    
                         self.frame_num = self.frame_num + 1                    
                         imgs_fp = sorted(data_util.glob_imgs(self.img_dir+'/'+img_folder))
                         # select view
@@ -188,6 +191,14 @@ class ViewDataset():
         print("Image size ", self.img_size)
         print("*" * 100)
 
+        # print("Buffering meshs...")
+        # if preset_uv_path:
+        #    self.v_attr, self.f_attr = nr.load_obj(cur_obj_fp, normalization = False)
+            
+        # if preload_mesh
+        # for frame_idx in self.frame_idxs:
+        #     cur_obj_fp = opt.obj_fp%(frame_idx)
+
 
     def buffer_all(self):
         # Buffer files
@@ -266,6 +277,7 @@ class ViewDataset():
         if self.is_train:
             view['img_gt'] = torch.from_numpy(img_gt)
 
+           
         # load precomputed data
         if self.load_precompute:
             precomp_low_dir = self.precomp_low_dir

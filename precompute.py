@@ -38,6 +38,7 @@ parser.add_argument('--only_mesh_related', default=False, type = lambda x: (str(
                     help='Whether only compute necessary data related to mesh.')
 # multi frame
 parser.add_argument('--multi_frame', type=bool, default=False, help='Input dynamic frame')
+parser.add_argument('--preset_uv_path', type=str, default=None, help='Prset uv for all frame')
 
 opt = parser.parse_args()
 if opt.obj_fp[:2] == '_/':
@@ -160,6 +161,7 @@ def main():
             print('Reset Rasterizer to ' + cur_obj_fp)
             rasterizer = network.Rasterizer(obj_fp = cur_obj_fp, 
                                 img_size = opt.img_size,
+                                # preset_uv_path = opt.preset_uv_path,
                                 global_RT = global_RT)
             rasterizer.to(device)
             rasterizer.eval()

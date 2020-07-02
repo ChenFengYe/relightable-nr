@@ -103,9 +103,16 @@ class Rasterizer(nn.Module):
     def __init__(self, 
                 obj_fp, 
                 img_size,
+                preset_uv_path = None,
                 global_RT = None):
         super(Rasterizer, self).__init__()
         v_attr, f_attr = nr.load_obj(obj_fp, normalization = False)
+        if preset_uv_path != None:
+            ref_v_attr, ref_f_attr = nr.load_obj(preset_uv_path, normalization = False)
+            if v_attr['v'].shape[0] != ref_v_attr['v'].shape[0]:
+                raise ValueError('Refered uv mesh and cur frame mesh have no same vertices length!')
+            else:
+                f_attr = ref_f_attr
         vertices = v_attr['v']
         faces = f_attr['f_v_idx']
         vertices_texcoords = v_attr['vt']
