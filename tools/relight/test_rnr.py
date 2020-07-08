@@ -48,10 +48,10 @@ parser.add_argument('--save_img_bg', default = True, type = lambda x: (str(x).lo
 parser.add_argument('--force_recompute', default = False, type = lambda x: (str(x).lower() in ['true', '1']))
 
 opt = parser.parse_args()
-checkpoint_fp = os.path.join(opt.checkpoint_dir, opt.checkpoint_name)
+cfg.MODEL.PRETRAINED = os.path.join(cfg.TEST.MODEL_DIR, cfg.TEST.MODEL_NAME)
 
 # load params from checkpoint
-params_fp = os.path.join(opt.checkpoint_dir, 'params.txt')
+params_fp = os.path.join(cfg.TEST.MODEL_DIR, 'params.txt')
 params_file = open(params_fp, "r")
 params_lines = params_file.readlines()
 params = {}
@@ -64,44 +64,44 @@ for line in params_lines:
         val = None
     params[key] = val
 # general
-opt.data_root = params['data_root']
+cfg.DATASET.ROOT = params['data_root']
 # mesh
 if not hasattr(opt, 'obj_high_fp'):
     opt.obj_high_fp = params['obj_high_fp']
 opt.obj_low_fp = params['obj_low_fp']
 # texture mapper
-opt.texture_size = int(params['texture_size'])
-opt.texture_num_ch = int(params['texture_num_ch'])
-opt.mipmap_level = int(params['mipmap_level'])
+cfg.MODEL.TEX_MAPPER.NUM_SIZE = int(params['texture_size'])
+cfg.MODEL.TEX_MAPPER.NUM_CHANNELS = int(params['texture_num_ch'])
+cfg.MODEL.TEX_MAPPER.MIPMAP_LEVEL = int(params['mipmap_level'])
 opt.apply_sh = params['apply_sh'] in ['True', 'true', '1']
 # lighting
 opt.sphere_samples_fp = params['sphere_samples_fp']
 # rendering net
-opt.nf0 = int(params['nf0'])
+cfg.MODEL.RENDER_NET.nf0 = int(params['nf0'])
 
-if opt.calib_dir[:2] == '_/':
-    opt.calib_dir = os.path.join(opt.data_root, opt.calib_dir[2:])
+if cfg.TEST.CALIB_DIR[:2] == '_/':
+    cfg.TEST.CALIB_DIR = os.path.join(cfg.DATASET.ROOT, cfg.TEST.CALIB_DIR[2:])
 if opt.obj_high_fp[:2] == '_/':
-    opt.obj_high_fp = os.path.join(opt.data_root, opt.obj_high_fp[2:])
+    opt.obj_high_fp = os.path.join(cfg.DATASET.ROOT, opt.obj_high_fp[2:])
 if opt.obj_low_fp[:2] == '_/':
-    opt.obj_low_fp = os.path.join(opt.data_root, opt.obj_low_fp[2:])
+    opt.obj_low_fp = os.path.join(cfg.DATASET.ROOT, opt.obj_low_fp[2:])
 if opt.lp_dir[:2] == '_/':
-    opt.lp_dir = os.path.join(opt.data_root, opt.lp_dir[2:])
+    opt.lp_dir = os.path.join(cfg.DATASET.ROOT, opt.lp_dir[2:])
 if opt.sphere_samples_fp[:2] == '_/':
-    opt.sphere_samples_fp = os.path.join(opt.data_root, opt.sphere_samples_fp[2:])
+    opt.sphere_samples_fp = os.path.join(cfg.DATASET.ROOT, opt.sphere_samples_fp[2:])
 obj_high_name = opt.obj_high_fp.split('/')[-1].split('.')[0]
 
 print('\n'.join(["%s: %s" % (key, value) for key, value in vars(opt).items()]))
 
-if opt.gpu_id == '':
+if cfg.GPUS == '':
     device = torch.device('cpu')
 else:
-    device = torch.device('cuda:' + opt.gpu_id)
+    device = torch.device('cuda:' + cfg.GPUS)
 
 
 # load global_RT
-opt.calib_fp = os.path.join(opt.calib_dir, 'calib.mat')
-global_RT = torch.from_numpy(scipy.io.loadmat(opt.calib_fp)['global_RT'].astype(np.float32))
+cfg.DATASET.CALIB_PATH = os.path.join(cfg.TEST.CALIB_DIR, 'calib.mat')
+global_RT = torch.from_numpy(scipy.io.loadmat(cfg.DATASET.CALIB_PATH)['global_RT'].astype(np.float32))
 
 num_channel = 3
 
@@ -110,10 +110,10 @@ l_dir_np = scipy.io.loadmat(opt.sphere_samples_fp)['sphere_samples'].transpose()
 l_dir = torch.from_numpy(l_dir_np) # [3, num_sample]
 
 # dataset for inference views
-view_dataset = dataio.ViewDataset(root_dir = opt.data_root,
-                                calib_path = opt.calib_fp,
+view_dataset = dataio.ViewDataset(root_dir = cfg.DATASET.ROOT,
+                                calib_path = cfg.DATASET.CALIB_PATH,
                                 calib_format = 'convert',
-                                img_size = [opt.img_size, opt.img_size],
+                                img_size = cfg.DATASET.OUTPUT_SIZE,
                                 sampling_pattern = opt.sampling_pattern,
                                 load_img = False,
                                 load_precompute = False
@@ -134,15 +134,15 @@ num_vertex = mesh.num_vertex
 interpolater = network.Interpolater()
 
 # texture mapper
-texture_mapper = network.TextureMapper(texture_size = opt.texture_size,
-                                        texture_num_ch = opt.texture_num_ch,
-                                        mipmap_level = opt.mipmap_level,
+texture_mapper = network.TextureMapper(texture_size = cfg.MODEL.TEX_MAPPER.NUM_SIZE,
+                                        texture_num_ch = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
+                                        mipmap_level = cfg.MODEL.TEX_MAPPER.MIPMAP_LEVEL,
                                         texture_init = None,
                                         fix_texture = True,
                                         apply_sh = opt.apply_sh)
 
 # load checkpoint
-checkpoint_dict = util.custom_load([texture_mapper], ['texture_mapper'], checkpoint_fp, strict = False)
+checkpoint_dict = util.custom_load([texture_mapper], ['texture_mapper'], cfg.MODEL.PRETRAINED, strict = False)
 
 # trained lighting model
 new_state_dict = OrderedDict()
@@ -198,8 +198,8 @@ new_state_dict = OrderedDict()
 for k, v in checkpoint_dict['render_net'].items():
     name = k.replace("module.", "")
     new_state_dict[name] = v
-render_net = network.RenderingNet(nf0 = opt.nf0,
-                                    in_channels = num_ray_total * 3 + 6 + opt.texture_num_ch,
+render_net = network.RenderingNet(nf0 = cfg.MODEL.RENDER_NET.nf0,
+                                    in_channels = num_ray_total * 3 + 6 + cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
                                     out_channels = 3 * num_ray_total,
                                     num_down_unet = 5,
                                     out_channels_gcn = int(params['out_channels_gcn'])
@@ -216,7 +216,7 @@ checkpoint_dict = None
 ray_renderer = network.RayRenderer(lighting_model, interpolater)
 
 # rasterizer
-rasterizer = network.Rasterizer(obj_fp = opt.obj_high_fp, img_size = opt.img_size, global_RT = global_RT)
+rasterizer = network.Rasterizer(obj_fp = opt.obj_high_fp, img_size = cfg.DATASET.OUTPUT_SIZE[0], global_RT = global_RT)
 
 # move to device
 interpolater.to(device)
@@ -253,10 +253,10 @@ def main():
     if opt.lighting_type == 'train':
         lighting_idx_all = [int(params['lighting_idx'])]
     else:
-        lighting_idx_all = [opt.lighting_idx]
+        lighting_idx_all = [cfg.DATASET.LIGHTING_IDX]
     
-    log_dir = opt.checkpoint_dir.split('/')
-    log_dir = os.path.join(opt.calib_dir, 'resol_' + str(opt.img_size), log_dir[-2], log_dir[-1].split('_')[0] + '_' + log_dir[-1].split('_')[1] + '_' + opt.checkpoint_name.split('-')[-1].split('.')[0])
+    log_dir = cfg.TEST.MODEL_DIR.split('/')
+    log_dir = os.path.join(cfg.TEST.CALIB_DIR, 'resol_' + str(cfg.DATASET.OUTPUT_SIZE[0]), log_dir[-2], log_dir[-1].split('_')[0] + '_' + log_dir[-1].split('_')[1] + '_' + cfg.TEST.MODEL_NAME.split('-')[-1].split('.')[0])
     data_util.cond_mkdir(log_dir)
 
     # get estimated illumination
@@ -267,7 +267,7 @@ def main():
     save_dir_alpha_map = os.path.join(log_dir, 'alpha_map')
     data_util.cond_mkdir(save_dir_alpha_map)
 
-    save_dir_sh_basis_map = os.path.join(opt.calib_dir, 'resol_' + str(opt.img_size), 'precomp', 'sh_basis_map')
+    save_dir_sh_basis_map = os.path.join(cfg.TEST.CALIB_DIR, 'resol_' + str(cfg.DATASET.OUTPUT_SIZE[0]), 'precomp', 'sh_basis_map')
     data_util.cond_mkdir(save_dir_sh_basis_map)
 
     # Save all command line arguments into a txt file in the logging directory for later reference.
@@ -333,7 +333,7 @@ def main():
             t_sh = time.time()
             # SH basis value for view_dir_map
             sh_basis_map_fp = os.path.join(save_dir_sh_basis_map, str(ithView).zfill(5) + '.mat')
-            if opt.force_recompute or not os.path.isfile(sh_basis_map_fp):
+            if cfg.TEST.FORCE_RECOMPUTE or not os.path.isfile(sh_basis_map_fp):
                 print('Compute sh_basis_map...')
                 sh_basis_map = sph_harm.evaluate_sh_basis(lmax = 2, directions = view_dir_map.reshape((-1, 3)).cpu().detach().numpy()).reshape((*(view_dir_map.shape[:3]), -1)).astype(np.float32) # [N, H, W, 9]
                 # save

@@ -95,7 +95,11 @@ class TextureMapper(nn.Module):
             if ithLevel == 0:
                 out = self.textures[ithLevel][..., start_ch:end_ch]
             else:
-                out = out + torch.nn.functional.interpolate(self.textures[ithLevel][..., start_ch:end_ch].permute(0, 3, 1, 2), size = (self.textures_size[0], self.textures_size[0]), mode = 'bilinear').permute(0, 2, 3, 1)
+                out = out + torch.nn.functional.interpolate(self.textures[ithLevel][..., start_ch:end_ch].permute(0, 3, 1, 2),
+                    size = (self.textures_size[0], self.textures_size[0]),
+                    mode = 'bilinear',
+                    align_corners = True, # chenxin-200708 try fix warning from pytorch
+                    ).permute(0, 2, 3, 1)
         return out
 
 

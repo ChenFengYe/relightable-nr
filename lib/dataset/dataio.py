@@ -10,6 +10,7 @@ import neural_renderer as nr
 
 class ViewDataset():
     def __init__(self,
+                 cfg,
                  root_dir,
                  calib_path,
                  calib_format,
@@ -22,9 +23,6 @@ class ViewDataset():
                  precomp_high_dir = None,
                  precomp_low_dir = None,
                  preset_uv_path = None,
-                 img_gamma = 1.0,
-                 multi_frame = False,
-                 frame_gap = 10,
                  ):
         super().__init__()
 
@@ -37,20 +35,21 @@ class ViewDataset():
         self.load_precompute = load_precompute
         self.precomp_high_dir = precomp_high_dir
         self.precomp_low_dir = precomp_low_dir
-        self.img_gamma = img_gamma
-        self.multi_frame = multi_frame
-        self.frame_gap = frame_gap
-        self.frame_idxs = []  # multi frame name
-        self.frame_num = 1
+        self.img_gamma = cfg.DATASET.GAMMA        
+        self.frame_range = cfg.DATASET.FRAME_RANGE
+        self.cam_range = cfg.DATASET.CAM_RANGE
         self.cam_idxs = []
-        
+        self.frame_idxs = []
+        self.frame_num = len(self.cam_range) & len(self.frame_range)
+        self.img_dir = img_dir
+
+        # set frame, camera range
 
         if not os.path.isdir(root_dir):
             raise ValueError("Error! root dir is wrong")
 
-        self.img_dir = img_dir
-        if self.is_train and not os.path.isdir(self.img_dir):
-            raise ValueError("Error! image dir is wrong")
+        #if self.is_train and not os.path.isdir(self.img_dir):
+        #    raise ValueError("Error! image dir is wrong")
 
         # load calibration data
         if calib_format == 'convert':
@@ -62,42 +61,29 @@ class ViewDataset():
         else:
             raise ValueError('Unknown calib format')
         self.global_RT_inv = np.linalg.inv(self.global_RT)
+        self.global_RT = torch.from_numpy(self.global_RT.astype(np.float32))
 
         # get frames
-        # get path for all input images
         self.img_fp_all = []
         if self.is_train:
-            if self.multi_frame:
-                self.frame_num =  0
-                for (i, img_folder) in enumerate(sorted(os.listdir(self.img_dir))):
-                    frame_idx = int(img_folder)
-                    #if not i % self.frame_gap:
-                    run_iter = 4
-                    if int(img_folder) > 20+30*run_iter and int(img_folder) <= 20+30*(run_iter+1):
-                    # if int(img_folder) > 160+30*run_iter and int(img_folder) <= 160+30*(run_iter+1):
-                    # if int(img_folder) == 290 or int(img_folder) == 300 or int(img_folder) == 310 :
-                    # if frame_idx == 20 :
-                        print(frame_idx)                    
-                        self.frame_num = self.frame_num + 1                    
-                        imgs_fp = sorted(data_util.glob_imgs(self.img_dir+'/'+img_folder))
-                        # select view
-                        for img_fp in imgs_fp:
-                            cam_idx = int(os.path.split(img_fp)[-1][:-4])
-                            # cam id begin with 0
-                            # if cam_idx == 53 :
-                            if 1 :
-                                self.frame_idxs.append(frame_idx)
-                                self.cam_idxs.append(cam_idx)
-                                self.img_fp_all.append(img_fp)            
-            else:
-                self.img_fp_all = sorted(data_util.glob_imgs(self.img_dir))            
+            self.frame_num =  0                
+            print(self.img_dir)
+            for frame_idx in self.frame_range:
+                for cam_idx in self.cam_range:
+                    img_path = self.img_dir%(frame_idx, cam_idx)
+                    # img_path = self.img_dir%(iF)
+                    if os.path.isfile(img_path):
+                        self.frame_idxs.append(frame_idx)
+                        self.img_fp_all.append(img_path)
+                        self.cam_idxs.append(cam_idx)
+                    else:
+                        raise ValueError('Not existed image path : ' + img_path)
         # test
         else:
             self.img_fp_all = ['x.x'] * self.num_view
-            #self.frame_idxs = np.resize(range(160,351), self.num_view) # set dynamic frame
-            self.frame_idxs = np.resize([290,300,310], self.num_view) # set dynamic frame
             self.cam_idxs = range(0,self.num_view)
-
+            self.frame_idxs = np.resize(cfg.TEST.FRAME_RANGE, self.num_view)
+            
         print(self.cam_idxs)
         print(self.img_fp_all)
         print(self.frame_idxs)
@@ -197,7 +183,7 @@ class ViewDataset():
             
         # if preload_mesh
         # for frame_idx in self.frame_idxs:
-        #     cur_obj_fp = opt.obj_fp%(frame_idx)
+        #     cur_obj_fp = cfg.DATASET.MESH_DIR%(frame_idx)
 
 
     def buffer_all(self):
@@ -229,6 +215,7 @@ class ViewDataset():
             img_gt = img_gt[:, :, :3]
             img_gt = img_gt.transpose(2,0,1)
             img_gt = img_gt ** self.img_gamma
+            
         else:
             min_dim = np.amin(img_hw)
             center_coord = img_hw // 2
@@ -257,9 +244,7 @@ class ViewDataset():
         proj_inv = numpy.linalg.inv(proj)
         R_inv = pose[:3, :3].transpose()
 
-        frame_idx = []
-        if self.multi_frame:
-            frame_idx = self.frame_idxs[self.keep_idx[idx]]
+        frame_idx = self.frame_idxs[self.keep_idx[idx]]
 
         view = {'proj_orig': torch.from_numpy(proj_orig.astype(np.float32)),
                 'proj': torch.from_numpy(proj.astype(np.float32)),
@@ -276,15 +261,15 @@ class ViewDataset():
 
         if self.is_train:
             view['img_gt'] = torch.from_numpy(img_gt)
+            # img_tmp = view['img_gt'].permute((1, 2, 0)).cpu().detach().numpy() * 255.0
+            # save_dir_img_gt = '/data/NFS/new_disk/chenxin/relightable-nr/data/mars_cx/precomp_0/resol_800'
+            # cv2.imwrite(os.path.join(save_dir_img_gt, img_fn + '.png'), img_tmp[:, :, ::-1])
 
            
         # load precomputed data
         if self.load_precompute:
-            precomp_low_dir = self.precomp_low_dir
-            precomp_high_dir = self.precomp_high_dir
-            if self.multi_frame:
-                precomp_low_dir = precomp_low_dir % frame_idx
-                precomp_high_dir = precomp_high_dir % frame_idx
+            precomp_low_dir = self.precomp_low_dir % frame_idx
+            precomp_high_dir = self.precomp_high_dir % frame_idx
 
             # cannot share across meshes
             raster = scipy.io.loadmat(os.path.join(precomp_low_dir, 'resol_' + str(self.img_size[0]), 'raster', img_fn.split('.')[0] + '.mat'))

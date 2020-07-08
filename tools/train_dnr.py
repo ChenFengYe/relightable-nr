@@ -18,208 +18,122 @@ from models import metric
 from dataset import dataio
 from dataset import data_util
 
+from config import cfg
+from config import update_config
+
 from utils import util
 
-
-parser = argparse.ArgumentParser()
-
-# general
-parser.add_argument('--data_root', required=True,
-                    help='Path to directory that holds the object data. See dataio.py for directory structure etc..')
-parser.add_argument('--logging_root', type=str, default=None, required=False,
-                    help='Path to directory where to write tensorboard logs and checkpoints.')
-# mesh
-parser.add_argument('--calib_fp', type=str, default='_/calib.mat', required=False,
-                    help='File name of calibration file')
-parser.add_argument('--calib_format', type=str, default='convert', required=False,
-                    help='Format of calibration file')
-parser.add_argument('--obj_fp', type=str, default='_/mesh.obj', required=False,
-                    help='Path of high-resolution mesh obj.')
-parser.add_argument('--tex_fp', type=str, default=None, required=False,
-                    help='Path of texture.')
-# view datasets
-parser.add_argument('--img_dir', type=str, default='_/rgb0', required=False,
-                    help='Path to directory that holds view images')
-parser.add_argument('--img_size', type=int, default=512,
-                    help='Sidelength of generated images. Default 512. Only less than native resolution of images is recommended.')
-parser.add_argument('--img_gamma', type=float, default=1.0,
-                    help='Image gamma.')
-# texture mapper
-parser.add_argument('--texture_size', type=int, default=512,
-                    help='Sidelength of neural texture. Default 512.')
-parser.add_argument('--texture_num_ch', type=int, default=16,
-                    help='Number of channels for neural texture. Default 16.')
-parser.add_argument('--mipmap_level', type=int, default=4, required=False,
-                    help='Mipmap levels for neural texture. Default 4.')
-parser.add_argument('--apply_sh', default=False, type = lambda x: (str(x).lower() in ['true', '1']),
-                    help='Whether apply spherical harmonics to sampled feature maps. Default False.')
-# render net
-parser.add_argument('--nf0', type=int, default=64,
-                    help='Number of features in outermost layer of U-Net architectures.')
-# training
-parser.add_argument('--max_epoch', type=int, default=2000, help='Maximum number of epochs to train for.')
-parser.add_argument('--lr', type=float, default=0.001, help='Learning rate.')
-parser.add_argument('--sampling_pattern', type=str, default='all', required=False)
-parser.add_argument('--batch_size', type=int, default=4, help='Batch size.')
-# validation
-parser.add_argument('--sampling_pattern_val', type=str, default='all', required=False)
-parser.add_argument('--val_freq', type=int, default=100,
-                    help='Test on validation data every X iterations.')
-# misc
-parser.add_argument('--exp_name', type=str, default='', help='(optional) Name for experiment.')
-parser.add_argument('--checkpoint', default='',
-                    help='Path to a checkpoint to load render_net weights from.')
-parser.add_argument('--start_epoch', type=int, default=0,
-                    help='Start epoch')
-parser.add_argument('--gpu_id', type=str, default='0,1,2,3',
-                    help='Cuda visible devices.')
-parser.add_argument('--log_freq', type=int, default=100,
-                    help='Save tensorboard logs every X iterations.')
-parser.add_argument('--ckp_freq', type=int, default=1000, help='Save checkpoint every X iterations.')
-# multi frame
-parser.add_argument('--multi_frame', type=bool, default=False, help='Input dynamic frame')
-parser.add_argument('--preset_uv_path', type=str, default=None, help='Prset uv for all frame')
-#parser.add_argument('--frame_gap', type=int, default=10, help='Input dynamic frame')
-
-opt = parser.parse_args()
-if opt.logging_root is None:
-    opt.logging_root = os.path.join(opt.data_root, 'logs', 'dnr')
-if opt.img_dir[:2] == '_/':
-    opt.img_dir = os.path.join(opt.data_root, opt.img_dir[2:])
-if opt.calib_fp[:2] == '_/':
-    opt.calib_fp = os.path.join(opt.data_root, opt.calib_fp[2:])
-if opt.obj_fp[:2] == '_/':
-    opt.obj_fp = os.path.join(opt.data_root, opt.obj_fp[2:])
-if opt.tex_fp is not None and opt.tex_fp[:2] == '_/':
-    opt.tex_fp = os.path.join(opt.data_root, opt.tex_fp[2:])
-obj_name = opt.obj_fp.split('/')[-1].split('.')[0]
-opt.precomp_dir = os.path.join(opt.data_root, 'precomp_' + obj_name)
-
-print('\n'.join(["%s: %s" % (key, value) for key, value in vars(opt).items()]))
-
-# device allocation
-if opt.gpu_id == '':
-    device = torch.device('cpu')
-else:
-    #print(opt.gpu_id)
-    #os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu_id
-    #device = torch.device('cuda')
-    torch.cuda.set_device(int(opt.gpu_id))
-    device = torch.device('cuda:'+ opt.gpu_id)
-
-# load texture
-if opt.tex_fp is not None:
-    texture_init = cv2.cvtColor(cv2.imread(opt.tex_fp), cv2.COLOR_BGR2RGB)
-    texture_init_resize = cv2.resize(texture_init, (opt.texture_size, opt.texture_size), interpolation = cv2.INTER_AREA).astype(np.float32) / 255.0
-    texture_init_use = torch.from_numpy(texture_init_resize).to(device)
-
-# dataset for training views
-view_dataset = dataio.ViewDataset(root_dir = opt.data_root,
-                                img_dir = opt.img_dir,
-                                calib_path = opt.calib_fp,
-                                calib_format = opt.calib_format,
-                                img_size = [opt.img_size, opt.img_size],
-                                sampling_pattern = opt.sampling_pattern,
-                                load_precompute = True,
-                                precomp_high_dir = opt.precomp_dir,
-                                precomp_low_dir = opt.precomp_dir,
-                                preset_uv_path = opt.preset_uv_path,
-                                img_gamma = opt.img_gamma,
-                                multi_frame = opt.multi_frame
-                                )
-
-# dataset for validation views
-view_val_dataset = dataio.ViewDataset(root_dir = opt.data_root,
-                                img_dir = opt.img_dir,
-                                calib_path = opt.calib_fp,
-                                calib_format = opt.calib_format,
-                                img_size = [opt.img_size, opt.img_size],
-                                sampling_pattern = opt.sampling_pattern_val,
-                                load_precompute = True,
-                                precomp_high_dir = opt.precomp_dir,
-                                precomp_low_dir = opt.precomp_dir,
-                                img_gamma = opt.img_gamma,
-                                multi_frame = opt.multi_frame
-                                )
-num_view_val = len(view_val_dataset)
-
-# texture mapper
-texture_mapper = network.TextureMapper(texture_size = opt.texture_size,
-                                        texture_num_ch = opt.texture_num_ch,
-                                        mipmap_level = opt.mipmap_level,
-                                        apply_sh = opt.apply_sh)
-
-# render net
-render_net = network.RenderingNet(nf0 = opt.nf0,
-                            in_channels = opt.texture_num_ch,
-                            out_channels = 3,
-                            num_down_unet = 5,
-                            use_gcn = False)
-
-# interpolater
-interpolater = network.Interpolater()
-
-# L1 loss
-criterionL1 = nn.L1Loss(reduction='mean').to(device)
-
-# Optimizer
-optimizerG = torch.optim.Adam(list(texture_mapper.parameters()) + list(render_net.parameters()), lr = opt.lr)
-
-# load checkpoint
-if opt.checkpoint:
-    util.custom_load([texture_mapper, render_net], ['texture_mapper', 'render_net'], opt.checkpoint)
-
-# move to device
-texture_mapper.to(device)
-render_net.to(device)
-interpolater.to(device)
-
-# get module
-texture_mapper_module = texture_mapper
-render_net_module = render_net
-
-# use multi-GPU
-# if opt.gpu_id != '':
-#     texture_mapper = nn.DataParallel(texture_mapper)
-#     render_net = nn.DataParallel(render_net)
-#     interpolater = nn.DataParallel(interpolater)
-
-# set to training mode
-texture_mapper.train()
-render_net.train()
-interpolater.train()
-
-# collect all networks
-part_list = [texture_mapper_module, render_net_module]
-part_name_list = ['texture_mapper', 'render_net']
-
-print("*" * 100)
-print("Number of generator parameters:")
-opt.num_params_texture_mapper = util.print_network(texture_mapper)
-opt.num_params_render_net = util.print_network(render_net)
-print("*" * 100)
+def parse_args():
+    parser = argparse.ArgumentParser()
+    # general
+    parser.add_argument('--cfg',
+                        help='experiment configure file name',
+                        required=True,
+                        type=str)
+    parser.add_argument('opts',
+                        help="Modify config options using the command-line",
+                        default=None,
+                        nargs=argparse.REMAINDER)
+    parser.add_argument('--gpu',
+                        help='gpu id for multiprocessing training',
+                        type=str)
+    args = parser.parse_args()
+    return args
 
 def main():
-    print('Start buffering data for training views...')
-    view_dataset.buffer_all()
-    view_dataloader = DataLoader(view_dataset, batch_size = opt.batch_size, shuffle = True, num_workers = 8)
+    print('Load config...')
+    args = parse_args()
+    update_config(cfg, args)
+    
+    # cfg.defrost()
+    # cfg.RANK = args.rank
+    # cfg.freeze()                                    
+        
+    # device allocation
+    print('Set device...')
+    #print(cfg.GPUS)
+    #os.environ["CUDA_VISIBLE_DEVICES"] = cfg.GPUS
+    #device = torch.device('cuda')
+    torch.cuda.set_device(cfg.GPUS)
+    device = torch.device('cuda:'+ str(cfg.GPUS))
 
-    print('Start buffering data for validation views...')
-    view_val_dataset.buffer_all()
-    view_val_dataloader = DataLoader(view_val_dataset, batch_size = opt.batch_size, shuffle = False, num_workers = 8)
+    print('Build Network...')
+    # texture mapper
+    texture_mapper = network.TextureMapper(texture_size = cfg.MODEL.TEX_MAPPER.NUM_SIZE,
+                                            texture_num_ch = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
+                                            mipmap_level = cfg.MODEL.TEX_MAPPER.MIPMAP_LEVEL,
+                                            apply_sh = cfg.MODEL.TEX_MAPPER.SH_BASIS)
+    # render net
+    render_net = network.RenderingNet(nf0 = cfg.MODEL.RENDER_NET.NF0,
+                                in_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
+                                out_channels = 3,
+                                num_down_unet = 5,
+                                use_gcn = False)
+    # interpolater
+    interpolater = network.Interpolater()
+    # L1 loss
+    criterionL1 = nn.L1Loss(reduction='mean').to(device)
+    # Optimizer
+    optimizerG = torch.optim.Adam(list(texture_mapper.parameters()) + list(render_net.parameters()), lr = cfg.TRAIN.LR)
 
-    # directory name contains some info about hyperparameters.
+    print('Loading Model...')
+    # load pretrain
+    iter = 0
     dir_name = os.path.join(datetime.datetime.now().strftime('%m-%d') + 
                             '_' + datetime.datetime.now().strftime('%H-%M-%S') +
-                            '_' + opt.sampling_pattern +
-                            '_' + opt.data_root.strip('/').split('/')[-1])
-    if opt.exp_name is not '':
-        dir_name += '_' + opt.exp_name
+                            '_' + cfg.TRAIN.SAMPLING_PATTERN +
+                            '_' + cfg.DATASET.ROOT.strip('/').split('/')[-1])
+    if cfg.TRAIN.EXP_NAME is not '':
+        dir_name += '_' + cfg.TRAIN.EXP_NAME
+    if cfg.AUTO_RESUME:
+        checkpoint_path = ''
+        if cfg.TRAIN.RESUME and cfg.TRAIN.CHECKPOINT:
+             checkpoint_path = cfg.TRAIN.CHECKPOINT
+             dir_name = cfg.TRAIN.CHECKPOINT_DIR
+             nums = [int(s) for s in cfg.TRAIN.CHECKPOINT_NAME.split('_') if s.isdigit()]
+             cfg.defrost()
+             cfg.TRAIN.BEGIN_EPOCH = nums[0] + 1
+             cfg.freeze()
+             iter = nums[1] + 1
+        elif cfg.MODEL.PRETRAINED:
+            checkpoint_path = cfg.MODEL.PRETRAIN
+    if checkpoint_path:
+        print(' Checkpoint_path : %s'%(checkpoint_path))
+        util.custom_load([texture_mapper, render_net], ['texture_mapper', 'render_net'], checkpoint_path)
+    else:
+        print(' Not load params. ')
 
+    # move to device
+    texture_mapper.to(device)
+    render_net.to(device)
+    interpolater.to(device)
+    # get module
+    texture_mapper_module = texture_mapper
+    render_net_module = render_net
+    # use multi-GPU
+    # if cfg.GPUS != '':
+    #     texture_mapper = nn.DataParallel(texture_mapper)
+    #     render_net = nn.DataParallel(render_net)
+    #     interpolater = nn.DataParallel(interpolater)
+    # set to training mode
+    texture_mapper.train()
+    render_net.train()
+    interpolater.train()
+    # collect all networks
+    part_list = [texture_mapper_module, render_net_module]
+    part_name_list = ['texture_mapper', 'render_net']
+    print("*" * 100)
+    print("Number of generator parameters:")
+    cfg.defrost()
+    cfg.MODEL.TEX_MAPPER.NUM_PARAMS = util.print_network(texture_mapper).item()
+    cfg.MODEL.RENDER_NET.NUM_PARAMS = util.print_network(render_net).item()
+    cfg.freeze()
+    print("*" * 100)
+
+    print("Set Log ...")
     # directory for logging
-    log_dir = os.path.join(opt.logging_root, dir_name)
+    log_dir = os.path.join(cfg.LOG.LOGGING_ROOT, dir_name)
     data_util.cond_mkdir(log_dir)
-
     # directory for saving validation data on view synthesis
     val_out_dir = os.path.join(log_dir, 'val_out')
     val_gt_dir = os.path.join(log_dir, 'val_gt')
@@ -228,18 +142,55 @@ def main():
     data_util.cond_mkdir(val_gt_dir)
     data_util.cond_mkdir(val_err_dir)
 
+    print("Prepare dataset ...")
+    # load texture
+    if cfg.DATASET.TEX_PATH:
+        texture_init = cv2.cvtColor(cv2.imread(cfg.DATASET.TEX_PATH), cv2.COLOR_BGR2RGB)
+        texture_init_resize = cv2.resize(texture_init, (cfg.MODEL.TEX_MAPPER.NUM_SIZE, cfg.MODEL.TEX_MAPPER.NUM_SIZE), interpolation = cv2.INTER_AREA).astype(np.float32) / 255.0
+        texture_init_use = torch.from_numpy(texture_init_resize).to(device)
+
+    # dataset for training views
+    view_dataset = dataio.ViewDataset(cfg = cfg, 
+                                    root_dir = cfg.DATASET.ROOT,
+                                    img_dir = cfg.DATASET.IMG_DIR,
+                                    calib_path = cfg.DATASET.CALIB_PATH,
+                                    calib_format = cfg.DATASET.CALIB_FORMAT,
+                                    img_size = cfg.DATASET.OUTPUT_SIZE,
+                                    sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN,
+                                    load_precompute = True,
+                                    precomp_high_dir = cfg.DATASET.PRECOMP_DIR,
+                                    precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
+                                    preset_uv_path = cfg.DATASET.UV_PATH,
+                                    )
+    # dataset for validation views
+    view_val_dataset = dataio.ViewDataset(cfg = cfg, 
+                                    root_dir = cfg.DATASET.ROOT,
+                                    img_dir = cfg.DATASET.IMG_DIR,
+                                    calib_path = cfg.DATASET.CALIB_PATH,
+                                    calib_format = cfg.DATASET.CALIB_FORMAT,
+                                    img_size = cfg.DATASET.OUTPUT_SIZE,
+                                    sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN_VAL,
+                                    load_precompute = True,
+                                    precomp_high_dir = cfg.DATASET.PRECOMP_DIR,
+                                    precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
+                                    )
+    num_view_val = len(view_val_dataset)
+
+    print('Start buffering data for training views...')
+    view_dataset.buffer_all()
+    view_dataloader = DataLoader(view_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = True, num_workers = 8)
+    print('Start buffering data for validation views...')
+    view_val_dataset.buffer_all()
+    view_val_dataloader = DataLoader(view_val_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = False, num_workers = 8)
+
     # Save all command line arguments into a txt file in the logging directory for later referene.
-    with open(os.path.join(log_dir, "params.txt"), "w") as out_file:
-        out_file.write('\n'.join(["%s: %s" % (key, value) for key, value in vars(opt).items()]))
-
     writer = SummaryWriter(log_dir)
-
-    iter = opt.start_epoch * len(view_dataset) # pre model is batch-1
+    # iter = cfg.TRAIN.BEGIN_EPOCH * len(view_dataset) # pre model is batch-1
 
     print('Begin training...')
     val_log_batch_id = 0
     first_val = True
-    for epoch in range(opt.start_epoch, opt.max_epoch):
+    for epoch in range(cfg.TRAIN.BEGIN_EPOCH, cfg.TRAIN.END_EPOCH):
         for view_trgt in view_dataloader:
             start = time.time()
             # get view data
@@ -293,7 +244,7 @@ def main():
             print("Iter %07d   Epoch %03d   loss_g %0.4f   mae_valid %0.4f   psnr_valid %0.4f   t_total %0.4f" % (iter, epoch, loss_g, err_metrics_batch_i['mae_valid_mean'], err_metrics_batch_i['psnr_valid_mean'], end - start))
 
             # tensorboard figure logs of training data
-            if not iter % opt.log_freq:
+            if not iter % cfg.LOG.PRINT_FREQ:
                 output_final_vs_gt = []
                 for i in range(len(view_trgt)):
                     output_final_vs_gt.append(outputs[i].clamp(min = 0., max = 1.))
@@ -309,7 +260,7 @@ def main():
                                 iter)
 
             # validation
-            if not iter % opt.val_freq:
+            if not iter % cfg.TRAIN.VAL_FREQ:
                 start_val = time.time()
                 with torch.no_grad():
                     # error metrics
@@ -425,12 +376,12 @@ def main():
 
             iter += 1
 
-            if iter % opt.ckp_freq == 0:
-                util.custom_save(os.path.join(log_dir, 'model_epoch-%d_iter-%s.pth' % (epoch, iter)), 
+            if iter % cfg.LOG.CHECKPOINT_FREQ == 0:
+                util.custom_save(os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter)), 
                                 part_list, 
                                 part_name_list)
 
-    util.custom_save(os.path.join(log_dir, 'model_epoch-%d_iter-%s.pth' % (epoch, iter)), 
+    util.custom_save(os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter)), 
                                 part_list, 
                                 part_name_list)
 

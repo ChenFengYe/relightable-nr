@@ -8,13 +8,11 @@ def cond_mkdir(path):
     if not os.path.exists(path):
         os.makedirs(path)
 
-
 def print_network(net):
     model_parameters = filter(lambda p: p.requires_grad, net.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
     print("%d" % params)
     return params
-
 
 def custom_load(models, names, path, strict = True):
     if type(models) is not list:
@@ -23,7 +21,6 @@ def custom_load(models, names, path, strict = True):
         names = [names]
     assert len(models) == len(names)
 
-    #whole_dict = torch.load(path, map_location='cpu')
     whole_dict = torch.load(path, map_location='cpu')
 
     for i in range(len(models)):

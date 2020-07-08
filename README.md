@@ -1,3 +1,53 @@
+# Xin' notes
+# [Paper Title](...)
+### [Paper](https://arxiv.org/abs/1911.11530) | [Video](https://drive.google.com/file/d/1_uqgmkfQCjItk3sT6ye247Tjl_SWnQLD/view?usp=sharing) | [Supplementary Video](https://drive.google.com/file/d/1mCBHOCJ4h6dlh3NETotpWBbWVv0COPZj/view?usp=sharing) | [Data](https://drive.google.com/drive/folders/11-YKY9e3aPhSYm7k9i9sA4clAYMvc4gM?usp=sharing)
+
+## News
+## Introduction
+## Main Results
+## Environment
+## Quick start
+0. refer to my onenote
+1. Install pytorch  
+2. Clone this repo xx
+3. Install dependencies:
+    ```
+    pip ......
+    conda .....
+    ```
+4. Download model ...
+5. Directory list ...
+   ```
+   ${POSE_ROOT}
+   ├── data
+   ├── experiments
+   ├── lib
+   ├── log
+   ├── models
+   ├── output
+   ├── tools 
+   ├── README.md
+   └── requirements.txt
+   ```
+## Data preparation
+  For training ...
+  For testing ...
+## Training and Testing    
+    python tools/train.py \
+        -- cfg experiments/dataset_name/net_name/net_name_params.yaml
+## Other ...
+
+## Citation
+If you find this work or code is helpful in your research, please cite:
+
+
+## References:   
+Referred readme:
+```
+https://github.com/HRNet/HigherHRNet-Human-Pose-Estimation/readme.md
+```
+----------------------------------------------
+
 # Relightable Neural Renderer
 ### [Paper](https://arxiv.org/abs/1911.11530) | [Video](https://drive.google.com/file/d/1_uqgmkfQCjItk3sT6ye247Tjl_SWnQLD/view?usp=sharing) | [Supplementary Video](https://drive.google.com/file/d/1mCBHOCJ4h6dlh3NETotpWBbWVv0COPZj/view?usp=sharing) | [Data](https://drive.google.com/drive/folders/11-YKY9e3aPhSYm7k9i9sA4clAYMvc4gM?usp=sharing)
 This repository contains a pytorch implementation for the paper: [A Neural Rendering Framework for Free-Viewpoint Relighting (CVPR 2020)](https://arxiv.org/abs/1911.11530). Our work takes multi-view images of an object under an unknown illumination as input, and produces a neural representation that can be rendered for both novel viewpoint and novel lighting.<br><br>

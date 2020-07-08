@@ -1,0 +1,99 @@
+AUTO_RESUME: True
+GPUS: 0
+#GPUS: (0,)
+#DATA_DIR: '' ??
+#OUTPUT_DIR: output ??
+
+# CUDNN:
+#   BENCHMARK: True
+#   DETERMINISTIC: False
+#   ENABLED: True
+LOG:
+  LOG_DIR: log
+  LOGGING_ROOT: ''
+  PRINT_FREQ: 100
+  CHECKPOINT_FREQ: 100
+DATASET:
+  DATASET: realdome_cx
+  DATASET_TEST: realdome_cx
+  
+  ROOT: 'data/realdome_cx'
+  FRAME_RANGE: [20,150]
+  CAM_RANGE: [17]  # [id] for single cam_id
+  IMG_DIR: '_/rgb0/%d/%03d.png'
+  # IMG_DIR: '_/rgb0/%03d.png'  
+  MESH_DIR: '_/mesh/%03d.obj'
+  TEX_PATH: ''
+  UV_PATH: ''
+  GAMMA: 1.0
+  OUTPUT_SIZE: [512, 512]
+
+  CALIB_PATH: '_/test_calib53/calib20200619_test_mid_53.mat'
+  CALIB_FORMAT: 'convert'
+
+  # relight
+  LIGHTING_IDX: 0
+  # autgmentation
+  MAX_ROTATION: 30
+  MAX_SCALE: 1.5
+  SCALE_TYPE: 'short'
+  MAX_TRANSLATE: 40
+  MIN_SCALE: 0.75
+  FLIP: 0.5
+MODEL:
+  INIT_WEIGHTS: True
+  NAME: dnr_unet_512_tex1024
+  PRETRAINED: ''
+  TEX_MAPPER:
+    NUM_CHANNELS: 24
+    NUM_SIZE: 2048
+    MIPMAP_LEVEL: 4
+    SH_BASIS: True
+    NUM_PARAMS: -1
+  RENDER_NET:
+    NF0: 64
+    OUTPUT_CHANNELS: 3
+    NUM_PARAMS: -1
+# LOSS:
+#   NUM_STAGES: 2
+#   AE_LOSS_TYPE: exp
+#   WITH_AE_LOSS: [True, False]
+#   PUSH_LOSS_FACTOR: [0.001, 0.001]
+#   PULL_LOSS_FACTOR: [0.001, 0.001]
+#   WITH_HEATMAPS_LOSS: [True, True]
+#   HEATMAPS_LOSS_FACTOR: [1.0, 1.0]
+TRAIN:
+  EXP_NAME: 'newTrain'
+  BATCH_SIZE: 1
+  BEGIN_EPOCH: 0
+  RESUME: True
+  CHECKPOINT: '_/logs/dnr/07-03_17-32-37_skipinv_10_realdome_cx_newTrain/model_epoch_871_iter_102000_.pth'
+  END_EPOCH: 10000
+  GAMMA: 1.0
+  SAMPLING_PATTERN: 'skipinv_10'
+  SAMPLING_PATTERN_VAL: 'skip_10'
+  VAL_FREQ: 100
+  SHUFFLE: False # TO-DO
+  LR: 0.001
+#  LR_FACTOR: 0.1
+#  LR_STEP: [200, 260]
+#  OPTIMIZER: adam
+#  MOMENTUM: 0.9
+#  WD: 0.0001
+TEST:
+  BATCH_SIZE: 3
+  FRAME_RANGE: [20,150]
+  CALIB_PATH: '_/test_calib53/calib20200619_test_close_53.mat'
+  SAMPLING_PATTERN: 'all'
+  FORCE_RECOMPUTE: True
+  MODEL_DIR: '_/logs/dnr/07-03_17-32-37_skipinv_10_realdome_cx_newTrain/model_epoch-777_iter-91000.pth' 
+  SAVE_FOLDER: 'img_clo_53_91000_f149'
+#  IMAGES_PER_GPU: 1
+#  SCALE_FACTOR: [1]
+DEBUG:
+  DEBUG: False
+#   SAVE_BATCH_IMAGES_GT: False
+#   SAVE_BATCH_IMAGES_PRED: False
+#   SAVE_HEATMAPS_GT: True
+#   SAVE_HEATMAPS_PRED: True
+#   SAVE_TAGMAPS_PRED: True

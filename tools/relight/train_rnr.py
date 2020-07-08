@@ -117,47 +117,47 @@ parser.add_argument('--ckp_freq', type=int, default=1000, help='Save checkpoint 
 
 
 opt = parser.parse_args()
-if opt.logging_root is None:
-    opt.logging_root = os.path.join(opt.data_root, 'logs', 'rnr')
-if opt.calib_fp[:2] == '_/':
-    opt.calib_fp = os.path.join(opt.data_root, opt.calib_fp[2:])
+if cfg.LOG.LOGGING_ROOT is None:
+    cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs', 'rnr')
+if cfg.DATASET.CALIB_PATH[:2] == '_/':
+    cfg.DATASET.CALIB_PATH = os.path.join(cfg.DATASET.ROOT, cfg.DATASET.CALIB_PATH[2:])
 if opt.obj_high_fp[:2] == '_/':
-    opt.obj_high_fp = os.path.join(opt.data_root, opt.obj_high_fp[2:])
+    opt.obj_high_fp = os.path.join(cfg.DATASET.ROOT, opt.obj_high_fp[2:])
 if opt.obj_low_fp[:2] == '_/':
-    opt.obj_low_fp = os.path.join(opt.data_root, opt.obj_low_fp[2:])
+    opt.obj_low_fp = os.path.join(cfg.DATASET.ROOT, opt.obj_low_fp[2:])
 if opt.obj_gcn_fp[:2] == '_/':
-    opt.obj_gcn_fp = os.path.join(opt.data_root, opt.obj_gcn_fp[2:])
-if opt.tex_fp[:2] == '_/':
-    opt.tex_fp = os.path.join(opt.data_root, opt.tex_fp[2:])
+    opt.obj_gcn_fp = os.path.join(cfg.DATASET.ROOT, opt.obj_gcn_fp[2:])
+if cfg.DATASET.TEX_PATH[:2] == '_/':
+    cfg.DATASET.TEX_PATH = os.path.join(cfg.DATASET.ROOT, cfg.DATASET.TEX_PATH[2:])
 if opt.lp_dir is not None and opt.lp_dir[:2] == '_/':
-    opt.lp_dir = os.path.join(opt.data_root, opt.lp_dir[2:])
+    opt.lp_dir = os.path.join(cfg.DATASET.ROOT, opt.lp_dir[2:])
 if opt.sphere_samples_fp[:2] == '_/':
-    opt.sphere_samples_fp = os.path.join(opt.data_root, opt.sphere_samples_fp[2:])
+    opt.sphere_samples_fp = os.path.join(cfg.DATASET.ROOT, opt.sphere_samples_fp[2:])
 obj_high_name = opt.obj_high_fp.split('/')[-1].split('.')[0]
 obj_low_name = opt.obj_low_fp.split('/')[-1].split('.')[0]
-opt.precomp_high_dir = os.path.join(opt.data_root, 'precomp_' + obj_high_name)
-opt.precomp_low_dir = os.path.join(opt.data_root, 'precomp_' + obj_low_name)
+opt.precomp_high_dir = os.path.join(cfg.DATASET.ROOT, 'precomp_' + obj_high_name)
+opt.precomp_low_dir = os.path.join(cfg.DATASET.ROOT, 'precomp_' + obj_low_name)
 
 print('\n'.join(["%s: %s" % (key, value) for key, value in vars(opt).items()]))
 
 # device allocation
-if opt.gpu_id == '':
+if cfg.GPUS == '':
     device_gcn = torch.device('cpu')
     device = torch.device('cpu')
 else:
-    os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu_id
-    device_gcn = torch.device('cuda:' + opt.gpu_id[0])
-    device = torch.device('cuda:' + opt.gpu_id[-1])
+    os.environ["CUDA_VISIBLE_DEVICES"] = cfg.GPUS
+    device_gcn = torch.device('cuda:' + cfg.GPUS[0])
+    device = torch.device('cuda:' + cfg.GPUS[-1])
 
 # load global_RT
-if opt.calib_format == 'convert':
-    global_RT = torch.from_numpy(scipy.io.loadmat(opt.calib_fp)['global_RT'].astype(np.float32))
+if cfg.DATASET.CALIB_FORMAT == 'convert':
+    global_RT = torch.from_numpy(scipy.io.loadmat(cfg.DATASET.CALIB_PATH)['global_RT'].astype(np.float32))
 else:
     global_RT = None
 
 # load texture of obj
-texture_init = cv2.cvtColor(cv2.imread(opt.tex_fp), cv2.COLOR_BGR2RGB)
-texture_init_resize = cv2.resize(texture_init, (opt.texture_size, opt.texture_size), interpolation = cv2.INTER_AREA).astype(np.float32) / 255.0
+texture_init = cv2.cvtColor(cv2.imread(cfg.DATASET.TEX_PATH), cv2.COLOR_BGR2RGB)
+texture_init_resize = cv2.resize(texture_init, (cfg.MODEL.TEX_MAPPER.NUM_SIZE, cfg.MODEL.TEX_MAPPER.NUM_SIZE), interpolation = cv2.INTER_AREA).astype(np.float32) / 255.0
 texture_init_use = None
 if opt.init_tex is True:
     texture_init_use = torch.from_numpy(texture_init_resize)
@@ -170,67 +170,67 @@ num_sample = l_dir.shape[1]
 
 # handle lighting options
 has_lighting_gt = True
-if opt.lighting_idx is None:
+if cfg.DATASET.LIGHTING_IDX is None:
     has_lighting_gt = False
-    opt.lighting_idx = 0 # store estimated lighting as the first lighting
+    cfg.DATASET.LIGHTING_IDX = 0 # store estimated lighting as the first lighting
 has_lighting_init = opt.init_lighting
 has_lighting_relight = True
 if opt.lighting_relight_idx is None:
     has_lighting_relight = False
 
 # dataset for training views
-if opt.lighting_idx is not None:
-    img_dir = opt.data_root + '/rgb' + str(opt.lighting_idx) + '/'
+if cfg.DATASET.LIGHTING_IDX is not None:
+    img_dir = cfg.DATASET.ROOT + '/rgb' + str(cfg.DATASET.LIGHTING_IDX) + '/'
 else:
-    img_dir = opt.data_root + '/rgb0/'
-view_dataset = dataio.ViewDataset(root_dir = opt.data_root,
+    img_dir = cfg.DATASET.ROOT + '/rgb0/'
+view_dataset = dataio.ViewDataset(root_dir = cfg.DATASET.ROOT,
                                 img_dir = img_dir,
-                                calib_path = opt.calib_fp,
-                                calib_format = opt.calib_format,
-                                img_size = [opt.img_size, opt.img_size],
-                                sampling_pattern = opt.sampling_pattern,
+                                calib_path = cfg.DATASET.CALIB_PATH,
+                                calib_format = cfg.DATASET.CALIB_FORMAT,
+                                img_size = cfg.DATASET.OUTPUT_SIZE,
+                                sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN,
                                 load_precompute = True,
                                 precomp_high_dir = opt.precomp_high_dir,
                                 precomp_low_dir = opt.precomp_low_dir,
-                                img_gamma = opt.img_gamma,
+                                img_gamma = cfg.DATASET.GAMMA,
                                 )
 
 # dataset for relighted training views
-img_relight_dir = opt.data_root + '/rgb' + str(opt.lighting_relight_idx) + '/'
+img_relight_dir = cfg.DATASET.ROOT + '/rgb' + str(opt.lighting_relight_idx) + '/'
 if os.path.isdir(img_relight_dir):
-    view_dataset_relight = dataio.ViewDataset(root_dir = opt.data_root,
+    view_dataset_relight = dataio.ViewDataset(root_dir = cfg.DATASET.ROOT,
                                     img_dir = img_relight_dir,
-                                    calib_path = opt.calib_fp,
-                                    calib_format = opt.calib_format,
-                                    img_size = [opt.img_size, opt.img_size],
+                                    calib_path = cfg.DATASET.CALIB_PATH,
+                                    calib_format = cfg.DATASET.CALIB_FORMAT,
+                                    img_size = cfg.DATASET.OUTPUT_SIZE,
                                     sampling_pattern = opt.sampling_pattern,
-                                    img_gamma = opt.img_gamma,
+                                    img_gamma = cfg.DATASET.GAMMA,
                                     )
 has_view_relight = has_lighting_relight and ('view_dataset_relight' in globals())
 
 # dataset for validation views
-view_val_dataset = dataio.ViewDataset(root_dir = opt.data_root,
+view_val_dataset = dataio.ViewDataset(root_dir = cfg.DATASET.ROOT,
                                 img_dir = img_dir,
-                                calib_path = opt.calib_fp,
-                                calib_format = opt.calib_format,
-                                img_size = [opt.img_size, opt.img_size],
-                                sampling_pattern = opt.sampling_pattern_val,
+                                calib_path = cfg.DATASET.CALIB_PATH,
+                                calib_format = cfg.DATASET.CALIB_FORMAT,
+                                img_size = cfg.DATASET.OUTPUT_SIZE,
+                                sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN_VAL,
                                 load_precompute = True,
                                 precomp_high_dir = opt.precomp_high_dir,
                                 precomp_low_dir = opt.precomp_low_dir,
-                                img_gamma = opt.img_gamma,
+                                img_gamma = cfg.DATASET.GAMMA,
                                 )
 num_view_val = len(view_val_dataset)
 
 # dataset for relighted validation views
 if os.path.isdir(img_relight_dir):
-    view_val_dataset_relight = dataio.ViewDataset(root_dir = opt.data_root,
+    view_val_dataset_relight = dataio.ViewDataset(root_dir = cfg.DATASET.ROOT,
                                     img_dir = img_relight_dir,
-                                    calib_path = opt.calib_fp,
-                                    calib_format = opt.calib_format,
-                                    img_size = [opt.img_size, opt.img_size],
-                                    sampling_pattern = opt.sampling_pattern_val,
-                                    img_gamma = opt.img_gamma,
+                                    calib_path = cfg.DATASET.CALIB_PATH,
+                                    calib_format = cfg.DATASET.CALIB_FORMAT,
+                                    img_size = cfg.DATASET.OUTPUT_SIZE,
+                                    sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN_VAL,
+                                    img_gamma = cfg.DATASET.GAMMA,
                                     )
 
 # dataset loader for light probes
@@ -246,9 +246,9 @@ else:
 interpolater = network.Interpolater()
 
 # texture mapper
-texture_mapper = network.TextureMapper(texture_size = opt.texture_size,
-                                        texture_num_ch = opt.texture_num_ch,
-                                        mipmap_level = opt.mipmap_level,
+texture_mapper = network.TextureMapper(texture_size = cfg.MODEL.TEX_MAPPER.NUM_SIZE,
+                                        texture_num_ch = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
+                                        mipmap_level = cfg.MODEL.TEX_MAPPER.MIPMAP_LEVEL,
                                         texture_init = texture_init_use,
                                         fix_texture = opt.fix_tex,
                                         apply_sh = opt.apply_sh)
@@ -276,17 +276,17 @@ lighting_model = lighting_model_sh
 
 #################### process lighting ####################
 # load stitched light probes
-if opt.lighting_idx is None:
+if cfg.DATASET.LIGHTING_IDX is None:
     idx_use = 0
 else:
-    idx_use = opt.lighting_idx
-lp_stitch_dir = os.path.join(opt.data_root, 'light_probe_stitch_' + opt.sampling_pattern)
+    idx_use = cfg.DATASET.LIGHTING_IDX
+lp_stitch_dir = os.path.join(cfg.DATASET.ROOT, 'light_probe_stitch_' + cfg.TRAIN.SAMPLING_PATTERN)
 if os.path.isfile(os.path.join(lp_stitch_dir, str(idx_use) + '.exr')):
     lp_stitch = cv2.imread(os.path.join(lp_stitch_dir, str(idx_use) + '.exr'), cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
 else:
     lp_stitch = cv2.imread(os.path.join(lp_stitch_dir, str(idx_use) + '.png'), cv2.IMREAD_UNCHANGED)[:, :, :3].astype(np.float32) / 255.
 lp_stitch[np.isnan(lp_stitch)] = 0
-lp_stitch = cv2.cvtColor(lp_stitch, cv2.COLOR_BGR2RGB) ** opt.img_gamma
+lp_stitch = cv2.cvtColor(lp_stitch, cv2.COLOR_BGR2RGB) ** cfg.DATASET.GAMMA
 lp_stitch_mask = cv2.imread(os.path.join(lp_stitch_dir, 'mask', str(idx_use) + '.png')).astype(np.float32) / 255.0
 lp_stitch_count = scipy.io.loadmat(os.path.join(lp_stitch_dir, 'count', str(idx_use) + '.mat'))
 lp_stitch_count = lp_stitch_count['count'].astype(np.float32) / lp_stitch_count['num_view'].astype(np.float32)
@@ -312,7 +312,7 @@ lp_stitch_sh_coeff = sph_harm.fit_sh_coeff(samples = l_samples_lp_stitch, sh_bas
 
 # lighting gt (sh and reconstructed lp)
 if has_lighting_gt:
-    lighting_sh_coeff_gt = lighting_model_sh.coeff.data[opt.lighting_idx, :].clone().to(device) # [num_basis, num_channel]
+    lighting_sh_coeff_gt = lighting_model_sh.coeff.data[cfg.DATASET.LIGHTING_IDX, :].clone().to(device) # [num_basis, num_channel]
     lp_gt = lighting_model_sh.reconstruct_lp(lighting_sh_coeff_gt.cpu()).to(device)
 # lighting stitch (sh and reconstructed lp)
 lighting_sh_coeff_stitch = lp_stitch_sh_coeff.to(device)
@@ -321,12 +321,12 @@ lp_stitch_sh_recon = lighting_model_sh.reconstruct_lp(lighting_sh_coeff_stitch.c
 # initialize lighting
 if has_lighting_init:
     lighting_sh_coeff_init = lighting_sh_coeff_stitch.clone() # [num_basis, num_channel]
-    lighting_model_sh.coeff.data[opt.lighting_idx, :] = lighting_sh_coeff_init # initialize
+    lighting_model_sh.coeff.data[cfg.DATASET.LIGHTING_IDX, :] = lighting_sh_coeff_init # initialize
     lp_init = lighting_model_sh.reconstruct_lp(lighting_sh_coeff_init.cpu()).to(device)
     l_samples_init = l_samples_lp_stitch.clone().to(device)
     l_samples_init_mask = l_samples_mask.clone().to(device)
 else:
-    lighting_model_sh.coeff.data[opt.lighting_idx, :] = 0.1 # reset lighting params, don't set to zero (normalize_factor will be nan)
+    lighting_model_sh.coeff.data[cfg.DATASET.LIGHTING_IDX, :] = 0.1 # reset lighting params, don't set to zero (normalize_factor will be nan)
 
 # get lighting data for relight
 if has_lighting_relight:
@@ -357,8 +357,8 @@ num_ray_diffuse = ray_sampler_diffuse.num_ray
 num_ray_total = num_ray + num_ray_diffuse
 
 # rendering net
-render_net = network.RenderingNet(nf0 = opt.nf0,
-                            in_channels = num_ray_total * 3 + 6 + opt.texture_num_ch,
+render_net = network.RenderingNet(nf0 = cfg.MODEL.RENDER_NET.nf0,
+                            in_channels = num_ray_total * 3 + 6 + cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
                             out_channels = 3 * num_ray_total,
                             num_down_unet = 5,
                             out_channels_gcn = opt.out_channels_gcn)
@@ -373,7 +373,7 @@ criterionL1 = nn.L1Loss(reduction = 'mean').to(device)
 criterion_rays_lt_chrom = network.RaysLTChromLoss().to(device)
 
 # Optimizer
-optimizerG = torch.optim.Adam(list(gcn.parameters()) + list(texture_mapper.parameters()) + list(lighting_model.parameters()) + list(render_net.parameters()), lr = opt.lr)
+optimizerG = torch.optim.Adam(list(gcn.parameters()) + list(texture_mapper.parameters()) + list(lighting_model.parameters()) + list(render_net.parameters()), lr = cfg.TRAIN.LR)
 optimizerG.zero_grad()
 
 # move to device
@@ -411,11 +411,11 @@ part_name_list = ['texture_mapper', 'lighting_model', 'ray_sampler', 'ray_sample
 print("*" * 100)
 print("Number of parameters")
 print("texture mapper:")
-opt.num_params_texture_mapper = util.print_network(texture_mapper)
+cfg.MODEL.TEX_MAPPER.NUM_PARAMS = util.print_network(texture_mapper)
 print("lighting model:")
 opt.num_params_lighting_model = util.print_network(lighting_model)
 print("render net:")
-opt.num_params_render_net = util.print_network(render_net)
+cfg.MODEL.RENDER_NET.NUM_PARAMS = util.print_network(render_net)
 print("gcn:")
 opt.num_params_gcn = util.print_network(gcn)
 print("*" * 100)
@@ -424,7 +424,7 @@ print("*" * 100)
 def main():
     print('Start buffering data for training views...')
     view_dataset.buffer_all()
-    view_dataloader = DataLoader(view_dataset, batch_size = opt.batch_size, shuffle = True, num_workers = 8)
+    view_dataloader = DataLoader(view_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = True, num_workers = 8)
 
     if has_view_relight:
         print('Start buffering data for relighted training views...')
@@ -432,7 +432,7 @@ def main():
 
     print('Start buffering data for validation views...')
     view_val_dataset.buffer_all()
-    view_val_dataloader = DataLoader(view_val_dataset, batch_size = opt.batch_size, shuffle = False, num_workers = 8)
+    view_val_dataloader = DataLoader(view_val_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = False, num_workers = 8)
 
     if has_view_relight:
         print('Start buffering data for relighted validation views...')
@@ -441,13 +441,13 @@ def main():
     # directory name contains some info about hyperparameters.
     dir_name = os.path.join(datetime.datetime.now().strftime('%m-%d') + 
                             '_' + datetime.datetime.now().strftime('%H-%M-%S') +
-                            '_' + opt.sampling_pattern +
-                            '_' + opt.data_root.strip('/').split('/')[-1])
-    if opt.exp_name is not '':
-        dir_name += '_' + opt.exp_name
+                            '_' + cfg.TRAIN.SAMPLING_PATTERN +
+                            '_' + cfg.DATASET.ROOT.strip('/').split('/')[-1])
+    if cfg.TRAIN.EXP_NAME is not '':
+        dir_name += '_' + cfg.TRAIN.EXP_NAME
 
     # directory for logging
-    log_dir = os.path.join(opt.logging_root, dir_name)
+    log_dir = os.path.join(cfg.LOG.LOGGING_ROOT, dir_name)
     data_util.cond_mkdir(log_dir)
 
     # directory for saving validation data on view synthesis
@@ -474,12 +474,12 @@ def main():
     # tensorboardX writer
     writer = SummaryWriter(log_dir)
 
-    iter = opt.start_epoch * len(view_dataset)
+    iter = cfg.TRAIN.BEGIN_EPOCH * len(view_dataset)
 
     print('Begin training...')
     val_log_batch_id = 0
     first_val = True
-    for epoch in range(opt.start_epoch, opt.max_epoch):
+    for epoch in range(cfg.TRAIN.BEGIN_EPOCH, cfg.TRAIN.END_EPOCH):
         for view_trgt in view_dataloader:
             if opt.max_iter is not None and iter >= opt.max_iter:
                 return
@@ -536,7 +536,7 @@ def main():
             rays_lt = (rays_lt * 0.5 + 0.5) * lt_max_val # map to [0, lt_max_val]
 
             # render using ray_renderer
-            outputs_final, _, _, _, _, _, _ = ray_renderer(albedo_specular, rays_uv, rays_lt, lighting_idx = opt.lighting_idx, albedo_diffuse = albedo_diffuse, num_ray_diffuse = num_ray_diffuse, seperate_albedo = True)
+            outputs_final, _, _, _, _, _, _ = ray_renderer(albedo_specular, rays_uv, rays_lt, lighting_idx = cfg.DATASET.LIGHTING_IDX, albedo_diffuse = albedo_diffuse, num_ray_diffuse = num_ray_diffuse, seperate_albedo = True)
             outputs_final = [outputs_final] # [N, C, H, W]
 
             with torch.no_grad():
@@ -555,7 +555,7 @@ def main():
                 img_relight_gt = [img_relight_gt]
 
             # get estimated lighting SH coeffs
-            lighting_sh_coeff_est = lighting_model_module.get_lighting_params(opt.lighting_idx) # [num_basis, num_channel]
+            lighting_sh_coeff_est = lighting_model_module.get_lighting_params(cfg.DATASET.LIGHTING_IDX) # [num_basis, num_channel]
             # reconstruct light probe
             lp_est = lighting_model_module.reconstruct_lp(lighting_sh_coeff_est)
             # reconstruct light samples
@@ -656,7 +656,7 @@ def main():
             print("Iter %07d   Epoch %03d   loss_g %0.4f   mae_valid %0.4f   psnr_valid %0.4f   t_total %0.4f" % (iter, epoch, loss_g, err_metrics_batch_i_final['mae_valid_mean'], err_metrics_batch_i_final['psnr_valid_mean'], end - start))
             
             # tensorboard figure logs of training data
-            if not iter % opt.log_freq:
+            if not iter % cfg.LOG.PRINT_FREQ:
                 output_final_vs_gt = []
                 for i in range(num_view):
                     output_final_vs_gt.append(outputs_final[i].clamp(min = 0., max = 1.))
@@ -704,7 +704,7 @@ def main():
                                     iter)
 
             # validation
-            if not iter % opt.val_freq:
+            if not iter % cfg.TRAIN.VAL_FREQ:
                 start_val = time.time()
                 with torch.no_grad():
                     # error metrics
@@ -770,7 +770,7 @@ def main():
                         rays_lt = render_net(render_net_input, v_feature).reshape((batch_size, num_ray_total, -1, img_h, img_w)) # [N, num_ray, C, H, W]
                         rays_lt = (rays_lt * 0.5 + 0.5) * lt_max_val # map to [0, lt_max_val]
 
-                        outputs_final, _, _, _, _, _, _ = ray_renderer(albedo_specular, rays_uv, rays_lt, lighting_idx = opt.lighting_idx, albedo_diffuse = albedo_diffuse, num_ray_diffuse = num_ray_diffuse, seperate_albedo = True)
+                        outputs_final, _, _, _, _, _, _ = ray_renderer(albedo_specular, rays_uv, rays_lt, lighting_idx = cfg.DATASET.LIGHTING_IDX, albedo_diffuse = albedo_diffuse, num_ray_diffuse = num_ray_diffuse, seperate_albedo = True)
                         outputs_final = [outputs_final] # [N, C, H, W]
 
                         # relight
@@ -888,7 +888,7 @@ def main():
 
             iter += 1
 
-            if iter % opt.ckp_freq == 0:
+            if iter % cfg.LOG.CHECKPOINT_FREQ == 0:
                 part_list[-1] = v_feature.cpu().detach()
                 util.custom_save(os.path.join(log_dir, 'model_epoch-%d_iter-%s.pth' % (epoch, iter)), 
                                 part_list, 

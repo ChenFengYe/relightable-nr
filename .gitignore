@@ -1,11 +1,14 @@
 .idea/*
 .vscode/*
 .ipynb_checkpoints/*
+tools/dataset/.ipynb_checkpoints/
 __pycache__/*
 *.pyc
 *.nfs*
+*.mtl
 
 data/*
 lib/neural_renderer/*
 temp/*
 tmp/*
+models/*
