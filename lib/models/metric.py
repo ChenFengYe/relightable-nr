@@ -46,6 +46,25 @@ def compute_err_metrics(img_est, img_gt, mask, compute_ssim = True):
 
     # get bounding box region
     suby, subx = (mask[:, :, 0] == 1).nonzero()
+    
+    # blank mask
+    err_metrics = {}
+    if len(subx) == 0 and len(suby) == 0:
+        err_metrics['mae'] = 0
+        err_metrics['mae_bb'] = 0
+        err_metrics['mae_valid'] = 0
+        err_metrics['mse'] = 0
+        err_metrics['mse_bb'] = 0
+        err_metrics['mse_valid'] = 0
+        err_metrics['psnr'] = 0
+        err_metrics['psnr_bb'] = 0
+        err_metrics['psnr_valid'] = 0
+        if compute_ssim:
+            err_metrics['ssim'] = 0
+            err_metrics['ssim_bb'] = 0
+            err_metrics['ssim_valid'] = 0
+        return err_metrics    
+
     bb_xmin = min(subx)
     bb_xmax = max(subx) + 1
     bb_ymin = min(suby)
@@ -61,7 +80,6 @@ def compute_err_metrics(img_est, img_gt, mask, compute_ssim = True):
 
     # compute error metrics
     num_valid_ele = mask.sum(dtype = np.float64)
-    err_metrics = {}
     err_metrics['mae'] = img_diff.mean(dtype = np.float64)
     err_metrics['mae_bb'] = img_diff_bb.mean(dtype = np.float64)
     err_metrics['mae_valid'] = (img_diff * mask).sum(dtype = np.float64) / num_valid_ele

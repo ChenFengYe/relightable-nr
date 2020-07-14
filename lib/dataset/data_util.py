@@ -24,8 +24,9 @@ def load_img(filepath, target_size=None, anti_aliasing=True, downsampling_order=
     elif filepath[-4:] == '.exr' or filepath[-4:] == '.hdr':
         img = cv2.imread(filepath, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
     else:
-        img = cv2.imread(filepath, cv2.IMREAD_UNCHANGED).astype(np.float32) / 255. # /255.
-        #print('Tip!!!!!!!! 255 rescale image!! for mars images')
+        img = cv2.imread(filepath, cv2.IMREAD_UNCHANGED).astype(np.float32) / 255.
+        # /255.
+        # print('Tip!!!!!!!! 255 rescale image!! for mars images')
 
     if img is None:
         print("Error: Path %s invalid" % filepath)

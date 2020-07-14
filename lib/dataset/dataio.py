@@ -17,22 +17,20 @@ class ViewDataset():
                  img_size,
                  sampling_pattern,
                  is_train = True,
-                 img_dir = None,
                  ignore_dist_coeffs = True,
-                 load_precompute = False,
                  precomp_high_dir = None,
                  precomp_low_dir = None,
                  preset_uv_path = None,
                  ):
         super().__init__()
 
+        self.cfg = cfg
         self.root_dir = root_dir
         self.calib_format = calib_format
         self.img_size = img_size
         self.ignore_dist_coeffs = ignore_dist_coeffs
         self.is_train = is_train
         self.preset_uv_path = preset_uv_path
-        self.load_precompute = load_precompute
         self.precomp_high_dir = precomp_high_dir
         self.precomp_low_dir = precomp_low_dir
         self.img_gamma = cfg.DATASET.GAMMA        
@@ -41,7 +39,6 @@ class ViewDataset():
         self.cam_idxs = []
         self.frame_idxs = []
         self.frame_num = len(self.cam_range) & len(self.frame_range)
-        self.img_dir = img_dir
 
         # set frame, camera range
 
@@ -54,7 +51,7 @@ class ViewDataset():
         # load calibration data
         if calib_format == 'convert':
             if not os.path.isfile(calib_path):
-                raise ValueError("Error! calib path is wrong")
+                raise ValueError("Error! calib path is wrong " + calib_path)
             self.calib = scipy.io.loadmat(calib_path)
             self.global_RT = self.calib['global_RT']
             self.num_view = self.calib['poses'].shape[0]
@@ -65,29 +62,28 @@ class ViewDataset():
 
         # get frames
         self.img_fp_all = []
+        self.obj_fp_all = []
         if self.is_train:
             self.frame_num =  0                
-            print(self.img_dir)
             for frame_idx in self.frame_range:
                 for cam_idx in self.cam_range:
-                    img_path = self.img_dir%(frame_idx, cam_idx)
-                    # img_path = self.img_dir%(iF)
-                    if os.path.isfile(img_path):
-                        self.frame_idxs.append(frame_idx)
-                        self.img_fp_all.append(img_path)
-                        self.cam_idxs.append(cam_idx)
-                    else:
+                    img_path = cfg.DATASET.IMG_DIR % (frame_idx, cam_idx)
+                    obj_path = cfg.DATASET.MESH_DIR %(frame_idx)
+                    if not os.path.isfile(img_path):
                         raise ValueError('Not existed image path : ' + img_path)
+                    if not os.path.isfile(obj_path):
+                        raise ValueError('Not existed mesh path : ' + obj_path)
+                    self.frame_idxs.append(frame_idx)
+                    self.img_fp_all.append(img_path)
+                    self.obj_fp_all.append(obj_path)
+                    self.cam_idxs.append(cam_idx)
         # test
         else:
             self.img_fp_all = ['x.x'] * self.num_view
             self.cam_idxs = range(0,self.num_view)
             self.frame_idxs = np.resize(cfg.TEST.FRAME_RANGE, self.num_view)
-            
-        print(self.cam_idxs)
-        print(self.img_fp_all)
-        print(self.frame_idxs)
-        
+            self.obj_fp_all = [cfg.DATASET.MESH_DIR%(frame_idx) for frame_idx in self.frame_idxs]
+
         # get intrinsic/extrinsic of all input images
         self.num_view = len(self.calib['poses'])
         self.poses_all = []
@@ -101,9 +97,9 @@ class ViewDataset():
         self.img_fp_all = img_fp_all_new
 
         # Subsample data
-        keep_idx = []
+        keep_idxs = []
         if sampling_pattern == 'all':
-            keep_idx = list(range(len(self.img_fp_all)))
+            keep_idxs = list(range(len(self.img_fp_all)))
         else:
             if sampling_pattern == 'filter':
                 img_fp_all_new = []
@@ -111,17 +107,17 @@ class ViewDataset():
                 for idx in self.calib['keep_id'][0, :]:
                     img_fp_all_new.append(self.img_fp_all[idx])
                     poses_all_new.append(self.poses_all[idx])
-                    keep_idx.append(idx)
+                    keep_idxs.append(idx)
                 self.img_fp_all = img_fp_all_new
                 self.poses_all = poses_all_new
             elif sampling_pattern.split('_')[0] == 'first':
                 first_val = int(sampling_pattern.split('_')[-1])
                 self.img_fp_all = self.img_fp_all[:first_val]
                 self.poses_all = self.poses_all[:first_val]
-                keep_idx = list(range(first_val))
+                keep_idxs = list(range(first_val))
             elif sampling_pattern.split('_')[0] == 'after':
                 after_val = int(sampling_pattern.split('_')[-1])
-                keep_idx = list(range(after_val, len(self.img_fp_all)))
+                keep_idxs = list(range(after_val, len(self.img_fp_all)))
                 self.img_fp_all = self.img_fp_all[after_val:]
                 self.poses_all = self.poses_all[after_val:]
             elif sampling_pattern.split('_')[0] == 'skip':
@@ -131,7 +127,7 @@ class ViewDataset():
                 for idx in range(0, len(self.img_fp_all), skip_val):
                     img_fp_all_new.append(self.img_fp_all[idx])
                     poses_all_new.append(self.poses_all[idx])
-                    keep_idx.append(idx)
+                    keep_idxs.append(idx)
                 self.img_fp_all = img_fp_all_new
                 self.poses_all = poses_all_new
             elif sampling_pattern.split('_')[0] == 'skipinv':
@@ -143,26 +139,27 @@ class ViewDataset():
                         continue
                     img_fp_all_new.append(self.img_fp_all[idx])
                     poses_all_new.append(self.poses_all[idx])
-                    keep_idx.append(idx)
+                    keep_idxs.append(idx)
                 self.img_fp_all = img_fp_all_new
                 self.poses_all = poses_all_new
             elif sampling_pattern.split('_')[0] == 'only':
                 choose_idx = int(sampling_pattern.split('_')[-1])
                 self.img_fp_all = [self.img_fp_all[choose_idx]]
                 self.poses_all = [self.poses_all[choose_idx]]
-                keep_idx.append(choose_idx)
+                keep_idxs.append(choose_idx)
             else:
                 raise ValueError("Unknown sampling pattern!")
 
-        self.keep_idx = np.array(keep_idx)
+        self.keep_idxs = np.array(keep_idxs)
         self.cam_idxs = np.array(self.cam_idxs)
+        
         if self.calib_format == 'convert':
-            #cam_idx = self.keep_idx % self.num_view            
-            cam_idx = self.cam_idxs[self.keep_idx]
-            self.calib['img_hws'] = self.calib['img_hws'][cam_idx, ...]
-            self.calib['projs'] = self.calib['projs'][cam_idx, ...]
-            self.calib['poses'] = self.calib['poses'][cam_idx, ...]
-            self.calib['dist_coeffs'] = self.calib['dist_coeffs'][cam_idx, ...]
+            #cam_idx = self.keep_idxs % self.num_view            
+            cam_idxs = self.cam_idxs[self.keep_idxs]
+            self.calib['img_hws'] = self.calib['img_hws'][cam_idxs, ...]
+            self.calib['projs'] = self.calib['projs'][cam_idxs, ...]
+            self.calib['poses'] = self.calib['poses'][cam_idxs, ...]
+            self.calib['dist_coeffs'] = self.calib['dist_coeffs'][cam_idxs, ...]
 
         # get mapping from img_fn to idx and vice versa
         # self.img_fn2idx = {}
@@ -180,11 +177,24 @@ class ViewDataset():
         # print("Buffering meshs...")
         # if preset_uv_path:
         #    self.v_attr, self.f_attr = nr.load_obj(cur_obj_fp, normalization = False)
-            
-        # if preload_mesh
-        # for frame_idx in self.frame_idxs:
-        #     cur_obj_fp = cfg.DATASET.MESH_DIR%(frame_idx)
 
+        self.objs = {}
+        if cfg.DATASET.PRELOAD_MESHS:
+            for keep_idx in self.keep_idxs:
+                frame_idx = self.frame_idxs[keep_idx]
+                if frame_idx in self.objs:
+                    continue
+                cur_obj_fp = cfg.DATASET.MESH_DIR%(frame_idx)
+                obj_data = {}
+                obj_data['v_attr'] , obj_data['f_attr'] = nr.load_obj(cur_obj_fp, normalization = False, use_cuda = False)
+                self.objs[frame_idx] = obj_data
+                if cfg.VERBOSE:
+                    print(' Loading mesh: ' + str(frame_idx) + ' ' + cur_obj_fp)
+
+        if cfg.DEBUG.DEBUG:
+            print(self.cam_idxs)
+            print(self.img_fp_all)
+            print(self.frame_idxs)        
 
     def buffer_all(self):
         # Buffer files
@@ -202,7 +212,9 @@ class ViewDataset():
 
 
     def read_view(self, idx):
+        # keep_idx = self.keep_idxs[idx]
         img_fp = self.img_fp_all[idx]
+
         img_fn = os.path.split(img_fp)[-1]
     
         # image size
@@ -215,7 +227,12 @@ class ViewDataset():
             img_gt = img_gt[:, :, :3]
             img_gt = img_gt.transpose(2,0,1)
             img_gt = img_gt ** self.img_gamma
-            
+
+            if self.cfg.DEBUG.DEBUG:
+                mask_fp = os.path.join(os.path.dirname(img_fp), 'mask/', os.path.basename(img_fp))
+                print(mask_fp)
+                mask_orig, center_coord, center_coord_new, img_crop_size = data_util.load_img(mask_fp, square_crop = True, downsampling_order = 1, target_size = self.img_size)
+                mask_orig = mask_orig[:,:,None]
         else:
             min_dim = np.amin(img_hw)
             center_coord = img_hw // 2
@@ -244,7 +261,8 @@ class ViewDataset():
         proj_inv = numpy.linalg.inv(proj)
         R_inv = pose[:3, :3].transpose()
 
-        frame_idx = self.frame_idxs[self.keep_idx[idx]]
+        frame_idx = self.frame_idxs[self.keep_idxs[idx]]
+        obj_path = self.obj_fp_all[self.keep_idxs[idx]]        
 
         view = {'proj_orig': torch.from_numpy(proj_orig.astype(np.float32)),
                 'proj': torch.from_numpy(proj.astype(np.float32)),
@@ -257,8 +275,9 @@ class ViewDataset():
                 'R_inv': torch.from_numpy(R_inv.astype(np.float32)),
                 'idx': idx,
                 'f_idx': frame_idx,
-                'img_fn': img_fn}
-
+                'img_fn': img_fn,
+                'obj_path': obj_path}
+        
         if self.is_train:
             view['img_gt'] = torch.from_numpy(img_gt)
             # img_tmp = view['img_gt'].permute((1, 2, 0)).cpu().detach().numpy() * 255.0
@@ -267,7 +286,7 @@ class ViewDataset():
 
            
         # load precomputed data
-        if self.load_precompute:
+        if self.cfg.DATASET.LOAD_PRECOMPUTE:
             precomp_low_dir = self.precomp_low_dir % frame_idx
             precomp_high_dir = self.precomp_high_dir % frame_idx
 
@@ -283,7 +302,7 @@ class ViewDataset():
             TBN_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'TBN_map', img_fn.split('.')[0] + '.mat'))['TBN_map']
             view['TBN_map'] = torch.from_numpy(TBN_map)
             uv_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'uv_map', img_fn.split('.')[0] + '.mat'))['uv_map']
-            uv_map = uv_map - np.floor(uv_map) # keep uv in [0, 1]
+            uv_map = uv_map - np.floor(uv_map) # keep uv in [0, 1] ?? question ?? why to - np.floor
             view['uv_map'] = torch.from_numpy(uv_map)
             normal_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'normal_map', img_fn.split('.')[0] + '.mat'))['normal_map']
             view['normal_map'] = torch.from_numpy(normal_map)
@@ -298,11 +317,11 @@ class ViewDataset():
             alpha_map = cv2.imread(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'alpha_map', img_fn.split('.')[0] + '.png'), cv2.IMREAD_UNCHANGED).astype(np.float32) / 255.0
             view['alpha_map'] = torch.from_numpy(alpha_map)
 
-            print('----------------------')
-            print(idx)
-            alpha_map_fp = os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'alpha_map', img_fn.split('.')[0] + '.png')
-            print(img_fp)
-            print(alpha_map_fp)
+            # print('----------------------')
+            # print(idx)
+            # alpha_map_fp = os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'alpha_map', img_fn.split('.')[0] + '.png')
+            # print(img_fp)
+            # print(alpha_map_fp)
 
             # Data checker -  For debugging
             # image size
@@ -320,6 +339,14 @@ class ViewDataset():
             #     print(uv_map_fp)
             #     raise ValueError("Alpha map not correct. \n uv_path: "+ img_fp + "\n alpha map path:"+ alpha_map_fp)
 
+        if self.cfg.DEBUG.DEBUG:
+            save_dir_img_gt = './Debug/origi_image/'
+            cv2.imwrite(os.path.join(save_dir_img_gt, '%03d_'%frame_idx + img_fn), cv2.cvtColor(img_gt.transpose(1,2,0)*255.0, cv2.COLOR_BGR2RGB))
+            print(' Save img: '+ os.path.join(save_dir_img_gt, '%03d_'%frame_idx + img_fn))
+            
+            # mask crop
+            save_dir_img_gt = './Debug/cut_image/'
+            cv2.imwrite(os.path.join(save_dir_img_gt, '%03d_'%frame_idx + img_fn), cv2.cvtColor(img_gt.transpose(1,2,0)*255.0 * mask_orig, cv2.COLOR_BGR2RGB))
         return view
 
 
@@ -385,4 +412,3 @@ class LightProbeDataset():
     def __getitem__(self, idx):
         self.buffer_one(idx)
         return self.lp_all[idx]
-

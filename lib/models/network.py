@@ -104,34 +104,46 @@ class TextureMapper(nn.Module):
 
 
 class Rasterizer(nn.Module):
-    def __init__(self, 
+    def __init__(self,
+                cfg, 
                 obj_fp, 
                 img_size,
+                obj_data = None,
                 preset_uv_path = None,
                 global_RT = None):
+
         super(Rasterizer, self).__init__()
-        v_attr, f_attr = nr.load_obj(obj_fp, normalization = False)
+
+        # load obj
+        #v_attr, f_attr = []
+        if obj_data != None:
+            v_attr, f_attr = obj_data['v_attr'] , obj_data['f_attr']
+        else:
+            v_attr, f_attr = nr.load_obj(obj_fp, normalization = False)           
         if preset_uv_path != None:
             ref_v_attr, ref_f_attr = nr.load_obj(preset_uv_path, normalization = False)
             if v_attr['v'].shape[0] != ref_v_attr['v'].shape[0]:
                 raise ValueError('Refered uv mesh and cur frame mesh have no same vertices length!')
             else:
                 f_attr = ref_f_attr
-        vertices = v_attr['v']
-        faces = f_attr['f_v_idx']
-        vertices_texcoords = v_attr['vt']
-        faces_vt_idx = f_attr['f_vt_idx']
-        vertices_normals = v_attr['vn']
-        faces_vn_idx = f_attr['f_vn_idx']
+
+        vertices = v_attr['v'].cuda()
+        faces = f_attr['f_v_idx'].cuda()
+        vertices_texcoords = v_attr['vt'].cuda()
+        faces_vt_idx = f_attr['f_vt_idx'].cuda()
+        vertices_normals = v_attr['vn'].cuda()
+        faces_vn_idx = f_attr['f_vn_idx'].cuda()
         self.num_vertex = vertices.shape[0]
         self.num_face = faces.shape[0]
-        print('vertices shape:', vertices.shape)
-        print('faces shape:', faces.shape)
-        print('vertices_texcoords shape:', vertices_texcoords.shape)
-        print('faces_vt_idx shape:', faces_vt_idx.shape)
-        print('vertices_normals shape:', vertices_normals.shape)
-        print('faces_vn_idx shape:', faces_vn_idx.shape)
+        if cfg.DEBUG.DEBUG:
+            print('vertices shape:', vertices.shape)
+            print('faces shape:', faces.shape)
+            print('vertices_texcoords shape:', vertices_texcoords.shape)
+            print('faces_vt_idx shape:', faces_vt_idx.shape)
+            print('vertices_normals shape:', vertices_normals.shape)
+            print('faces_vn_idx shape:', faces_vn_idx.shape)
         self.img_size = img_size
+        self.global_RT = global_RT
 
         # apply global_RT
         if global_RT is not None:
@@ -163,6 +175,16 @@ class Rasterizer(nn.Module):
         renderer.anti_aliasing = False
         renderer.fill_back = False
         self.renderer = renderer
+
+    def update_vs(self, v_attr):
+        vertices = v_attr['v'].cuda()
+        vertices_normals = v_attr['vn'].cuda()
+        # apply global_RT
+        if self.global_RT is not None:
+            vertices = torch.matmul(self.global_RT.to(vertices.device), torch.cat((vertices, torch.ones(self.num_vertex, 1).to(vertices.device)), dim = 1).transpose(1, 0)).transpose(1, 0)[:, :3]
+            vertices_normals = torch.nn.functional.normalize(torch.matmul(self.global_RT[:3, :3].to(vertices.device), vertices_normals.transpose(1, 0)).transpose(1, 0), dim = 1)
+        self.register_buffer('vertices', vertices[None, :, :]) # [1, num_vertex, 3]
+        self.mesh_span = (self.vertices[0, :].max(dim = 0)[0] - self.vertices[0, :].min(dim = 0)[0]).max()
 
     def forward(self, proj, pose, dist_coeffs, offset, scale):
         _, depth, alpha, face_index_map, weight_map, v_uvz, faces_v_uvz, faces_v_idx = self.renderer(self.vertices, 

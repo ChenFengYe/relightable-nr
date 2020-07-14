@@ -13,12 +13,13 @@ _C.AUTO_RESUME = True
 _C.GPUS = 0
 _C.WORKERS = 8
 _C.RANK = 0
-# _C.VERBOSE = True
+_C.VERBOSE = True
 # _C.GPUS = (0,)
 # _C.OUTPUT_DIR = ''
 # _C.DATA_DIR = ''
 
 _C.LOG = CN()
+_C.LOG.CFG_NAME = 'config_name.yaml' # TO-DO                  
 _C.LOG.LOG_DIR = 'log' # TO-DO                  
 _C.LOG.LOGGING_ROOT = ''                # Path to directory where to write tensorboard logs and checkpoints
 _C.LOG.PRINT_FREQ = 100
@@ -33,12 +34,16 @@ _C.DATASET.FRAME_RANGE = [0,100]
 _C.DATASET.CAM_RANGE = [0,100]
 _C.DATASET.IMG_DIR = '_/rgb0/%03d.png'
 _C.DATASET.MESH_DIR = '_/mesh/%03d.obj'
-_C.DATASET.TEX_PATH = ''
-_C.DATASET.UV_PATH = ''                 # Preset uv for all frame
 _C.DATASET.GAMMA = 1.0
 _C.DATASET.OUTPUT_SIZE = [512,512]      # Sidelength of generated images. Only less than native resolution of images is recommended
 _C.DATASET.CALIB_PATH = '_/test_calib53/calib20200619_test_mid_53.mat'  # Path of calibration file for inference sequence                                           
 _C.DATASET.CALIB_FORMAT = 'convert'
+# 3D computing
+_C.DATASET.PRELOAD_MESHS = False
+_C.DATASET.LOAD_PRECOMPUTE = True
+_C.DATASET.TEX_PATH = ''
+_C.DATASET.UV_PATH = ''                 # Preset uv for all frame
+
 # Relight params
 _C.DATASET.LIGHTING_IDX = 0
 # Training data augmentation
@@ -95,14 +100,15 @@ _C.TEST = CN()
 _C.TEST.BATCH_SIZE = 3
 _C.TEST.FRAME_RANGE = [0,100]
 _C.TEST.CALIB_PATH = '_/test_calib/calib.mat'
+_C.TEST.CALIB_DIR = ''
+_C.TEST.CALIB_NAME = ''
 _C.TEST.SAMPLING_PATTERN = 'all'            # Sampling of image testing sequences
 _C.TEST.FORCE_RECOMPUTE = True  
-_C.TEST.MODEL_PATH = 'models/dataset_name/net_name/date_net_params.'    # Path to a checkpoint to load render_net weights from
+_C.TEST.MODEL_PATH = 'models/dataset_name/net_name/date_net_params.pth'    # Path to a checkpoint to load render_net weights from
 _C.TEST.MODEL_DIR = ''
 _C.TEST.MODEL_NAME = ''
 _C.TEST.SAVE_FOLDER = 'img_test'            # Save folder for test imgs
 #_C.TEST.SCALE_FACTOR = [1]
-_C.TEST.MODEL_FILE = ''
 _C.TEST.LOG_PROGRESS = False
 
 _C.DEBUG = CN()
@@ -118,12 +124,14 @@ def update_config(cfg, args):
     cfg.merge_from_file(args.cfg)
     cfg.merge_from_list(args.opts)
 
+    # Add path under root folder
+    if cfg.TEST.CALIB_PATH and cfg.TEST.CALIB_PATH[:2] == '_/':
+        cfg.TEST.CALIB_PATH = os.path.join(cfg.DATASET.ROOT, cfg.TEST.CALIB_PATH[2:])
+    if cfg.TEST.MODEL_PATH and cfg.TEST.MODEL_PATH[:2] == '_/':
+        cfg.TEST.MODEL_PATH = os.path.join(cfg.DATASET.ROOT, cfg.TEST.MODEL_PATH[2:])
     (cfg.TEST.CALIB_DIR, cfg.TEST.CALIB_NAME) = os.path.split(cfg.TEST.CALIB_PATH)
     (cfg.TEST.MODEL_DIR, cfg.TEST.MODEL_NAME) = os.path.split(cfg.TEST.MODEL_PATH)
-    
-    # Add path under root folder
-    if cfg.TEST.CALIB_DIR[:2] == '_/':
-        cfg.TEST.CALIB_DIR = os.path.join(cfg.DATASET.ROOT, cfg.TEST.CALIB_DIR[2:])
+
     if cfg.DATASET.IMG_DIR[:2] == '_/':
         cfg.DATASET.IMG_DIR = os.path.join(cfg.DATASET.ROOT, cfg.DATASET.IMG_DIR[2:])
     if cfg.DATASET.CALIB_PATH[:2] == '_/':
@@ -133,14 +141,14 @@ def update_config(cfg, args):
     if not cfg.DATASET.TEX_PATH and cfg.DATASET.TEX_PATH[:2] == '_/':
         cfg.DATASET.TEX_PATH = os.path.join(cfg.DATASET.ROOT, cfg.DATASET.TEX_PATH[2:])
         cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs', 'dnr')
+
     if not cfg.LOG.LOGGING_ROOT:
         cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs', 'dnr')
-    if cfg.TRAIN.CHECKPOINT and cfg.TRAIN.CHECKPOINT[:2] == '_/':
-        cfg.TRAIN.CHECKPOINT = os.path.join(cfg.DATASET.ROOT, cfg.TRAIN.CHECKPOINT[2:])
-    if cfg.TEST.MODEL_FILE and cfg.TEST.MODEL_FILE[:2] == '_/':
-        cfg.TEST.MODEL_FILE = os.path.join(cfg.DATASET.ROOT, cfg.TEST.MODEL_FILE[2:])
+
     if cfg.MODEL.PRETRAINED and cfg.MODEL.PRETRAINED[:2] == '_/':
         cfg.MODEL.PRETRAINED = os.path.join(cfg.DATASET.ROOT, cfg.MODEL.PRETRAINED[2:])
+    if cfg.TRAIN.CHECKPOINT and cfg.TRAIN.CHECKPOINT[:2] == '_/':
+        cfg.TRAIN.CHECKPOINT = os.path.join(cfg.DATASET.ROOT, cfg.TRAIN.CHECKPOINT[2:])
     if cfg.TRAIN.CHECKPOINT:    
         cfg.TRAIN.CHECKPOINT_DIR = cfg.TRAIN.CHECKPOINT.split('/')[-2]
         cfg.TRAIN.CHECKPOINT_NAME = cfg.TRAIN.CHECKPOINT.split('/')[-1]

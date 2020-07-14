@@ -3,6 +3,15 @@ import numpy as np
 import torch
 from collections import OrderedDict
 
+import imageio
+import glob
+
+def make_gif(input_path, save_path):
+    with imageio.get_writer(save_path, mode='I') as writer:
+        for filename in sorted(glob.glob(input_path +'/*.png')):
+            writer.append_data(imageio.imread(filename))
+            # os.remove(filename)
+    writer.close()
 
 def cond_mkdir(path):
     if not os.path.exists(path):

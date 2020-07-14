@@ -1,3 +1,9 @@
+# backuo 200709
+# test_map = torch.tensor(img_gt[0][:,0,:,:][:,None,:,:] <= (2.0 * 255)).cpu().to(alpha_map.dtype).permute(0,2,3,1).numpy()
+# print(test_map.shape)
+# cv2.imwrite('/data/NFS/new_disk/chenxin/relightable-nr/data/realdome_cx/logs/dnr/test.png', test_map[0,:,:,:])
+# cv2.imwrite('/data/NFS/new_disk/chenxin/relightable-nr/data/realdome_cx/logs/dnr/test_255.png', test_map[0,:,:,:] * 255.)
+
 import argparse
 import os, time, datetime
 
@@ -22,6 +28,7 @@ from config import cfg
 from config import update_config
 
 from utils import util
+from shutil import copyfile
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -57,7 +64,49 @@ def main():
     torch.cuda.set_device(cfg.GPUS)
     device = torch.device('cuda:'+ str(cfg.GPUS))
 
+    print("Build dataloader ...")
+    # load texture
+    if cfg.DATASET.TEX_PATH:
+        texture_init = cv2.cvtColor(cv2.imread(cfg.DATASET.TEX_PATH), cv2.COLOR_BGR2RGB)
+        texture_init_resize = cv2.resize(texture_init, (cfg.MODEL.TEX_MAPPER.NUM_SIZE, cfg.MODEL.TEX_MAPPER.NUM_SIZE), interpolation = cv2.INTER_AREA).astype(np.float32) / 255.0
+        texture_init_use = torch.from_numpy(texture_init_resize).to(device)
+    # dataset for training views
+    view_dataset = dataio.ViewDataset(cfg = cfg, 
+                                    root_dir = cfg.DATASET.ROOT,
+                                    calib_path = cfg.DATASET.CALIB_PATH,
+                                    calib_format = cfg.DATASET.CALIB_FORMAT,
+                                    img_size = cfg.DATASET.OUTPUT_SIZE,
+                                    sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN,
+                                    precomp_high_dir = cfg.DATASET.PRECOMP_DIR,
+                                    precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
+                                    preset_uv_path = cfg.DATASET.UV_PATH,
+                                    )
+    # dataset for validation views
+    view_val_dataset = dataio.ViewDataset(cfg = cfg, 
+                                    root_dir = cfg.DATASET.ROOT,
+                                    calib_path = cfg.DATASET.CALIB_PATH,
+                                    calib_format = cfg.DATASET.CALIB_FORMAT,
+                                    img_size = cfg.DATASET.OUTPUT_SIZE,
+                                    sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN_VAL,
+                                    precomp_high_dir = cfg.DATASET.PRECOMP_DIR,
+                                    precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
+                                    )
+    num_view_val = len(view_val_dataset)
+
     print('Build Network...')
+    # Rasterizer
+    cur_obj_path = ''
+    if not cfg.DATASET.LOAD_PRECOMPUTE:
+        view_data = view_dataset.read_view(0)
+        cur_obj_path = view_data['obj_path']
+        frame_idx = view_data['f_idx']
+        obj_data = view_dataset.objs[frame_idx]
+        rasterizer = network.Rasterizer(cfg,
+                            obj_fp = cur_obj_path, 
+                            img_size = cfg.DATASET.OUTPUT_SIZE[0],
+                            obj_data = obj_data,
+                            # preset_uv_path = cfg.DATASET.UV_PATH,
+                            global_RT = view_dataset.global_RT)
     # texture mapper
     texture_mapper = network.TextureMapper(texture_size = cfg.MODEL.TEX_MAPPER.NUM_SIZE,
                                             texture_num_ch = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
@@ -71,13 +120,13 @@ def main():
                                 use_gcn = False)
     # interpolater
     interpolater = network.Interpolater()
+
     # L1 loss
     criterionL1 = nn.L1Loss(reduction='mean').to(device)
     # Optimizer
     optimizerG = torch.optim.Adam(list(texture_mapper.parameters()) + list(render_net.parameters()), lr = cfg.TRAIN.LR)
 
     print('Loading Model...')
-    # load pretrain
     iter = 0
     dir_name = os.path.join(datetime.datetime.now().strftime('%m-%d') + 
                             '_' + datetime.datetime.now().strftime('%H-%M-%S') +
@@ -103,11 +152,11 @@ def main():
     else:
         print(' Not load params. ')
 
-    # move to device
     texture_mapper.to(device)
     render_net.to(device)
     interpolater.to(device)
-    # get module
+    rasterizer.to(device)
+
     texture_mapper_module = texture_mapper
     render_net_module = render_net
     # use multi-GPU
@@ -119,8 +168,9 @@ def main():
     texture_mapper.train()
     render_net.train()
     interpolater.train()
-    # collect all networks
-    part_list = [texture_mapper_module, render_net_module]
+    rasterizer.eval()        # no train now
+
+    part_list = [texture_mapper_module, render_net_module]     # collect all networks
     part_name_list = ['texture_mapper', 'render_net']
     print("*" * 100)
     print("Number of generator parameters:")
@@ -130,55 +180,20 @@ def main():
     cfg.freeze()
     print("*" * 100)
 
-    print("Set Log ...")
-    # directory for logging
+    print("Setup Log ...")
     log_dir = os.path.join(cfg.LOG.LOGGING_ROOT, dir_name)
     data_util.cond_mkdir(log_dir)
-    # directory for saving validation data on view synthesis
     val_out_dir = os.path.join(log_dir, 'val_out')
     val_gt_dir = os.path.join(log_dir, 'val_gt')
     val_err_dir = os.path.join(log_dir, 'val_err')
     data_util.cond_mkdir(val_out_dir)
     data_util.cond_mkdir(val_gt_dir)
     data_util.cond_mkdir(val_err_dir)
-
-    print("Prepare dataset ...")
-    # load texture
-    if cfg.DATASET.TEX_PATH:
-        texture_init = cv2.cvtColor(cv2.imread(cfg.DATASET.TEX_PATH), cv2.COLOR_BGR2RGB)
-        texture_init_resize = cv2.resize(texture_init, (cfg.MODEL.TEX_MAPPER.NUM_SIZE, cfg.MODEL.TEX_MAPPER.NUM_SIZE), interpolation = cv2.INTER_AREA).astype(np.float32) / 255.0
-        texture_init_use = torch.from_numpy(texture_init_resize).to(device)
-
-    # dataset for training views
-    view_dataset = dataio.ViewDataset(cfg = cfg, 
-                                    root_dir = cfg.DATASET.ROOT,
-                                    img_dir = cfg.DATASET.IMG_DIR,
-                                    calib_path = cfg.DATASET.CALIB_PATH,
-                                    calib_format = cfg.DATASET.CALIB_FORMAT,
-                                    img_size = cfg.DATASET.OUTPUT_SIZE,
-                                    sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN,
-                                    load_precompute = True,
-                                    precomp_high_dir = cfg.DATASET.PRECOMP_DIR,
-                                    precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
-                                    preset_uv_path = cfg.DATASET.UV_PATH,
-                                    )
-    # dataset for validation views
-    view_val_dataset = dataio.ViewDataset(cfg = cfg, 
-                                    root_dir = cfg.DATASET.ROOT,
-                                    img_dir = cfg.DATASET.IMG_DIR,
-                                    calib_path = cfg.DATASET.CALIB_PATH,
-                                    calib_format = cfg.DATASET.CALIB_FORMAT,
-                                    img_size = cfg.DATASET.OUTPUT_SIZE,
-                                    sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN_VAL,
-                                    load_precompute = True,
-                                    precomp_high_dir = cfg.DATASET.PRECOMP_DIR,
-                                    precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
-                                    )
-    num_view_val = len(view_val_dataset)
+    copyfile(args.cfg, os.path.join(log_dir, cfg.LOG.CFG_NAME))
 
     print('Start buffering data for training views...')
     view_dataset.buffer_all()
-    view_dataloader = DataLoader(view_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = True, num_workers = 8)
+    view_dataloader = DataLoader(view_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = cfg.TRAIN.SHUFFLE, num_workers = 8)
     print('Start buffering data for validation views...')
     view_val_dataset.buffer_all()
     view_val_dataloader = DataLoader(view_val_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = False, num_workers = 8)
@@ -188,21 +203,55 @@ def main():
     # iter = cfg.TRAIN.BEGIN_EPOCH * len(view_dataset) # pre model is batch-1
 
     print('Begin training...')
+    # init value
     val_log_batch_id = 0
     first_val = True
+    img_h, img_w = cfg.DATASET.OUTPUT_SIZE
     for epoch in range(cfg.TRAIN.BEGIN_EPOCH, cfg.TRAIN.END_EPOCH):
         for view_trgt in view_dataloader:
             start = time.time()
-            # get view data
-            uv_map = view_trgt[0]['uv_map'].to(device) # [N, H, W, 2]
-            sh_basis_map = view_trgt[0]['sh_basis_map'].to(device) # [N, H, W, 9]
-            alpha_map = view_trgt[0]['alpha_map'][:, None, :, :].to(device) # [N, 1, H, W]
+
+            # get image
             img_gt = []
-            for i in range(len(view_trgt)):
-                img_gt.append(view_trgt[i]['img_gt'].to(device))
+            img_gt.append(view_trgt[0]['img_gt'].to(device))
+            # get uvmap alpha
+            uv_map = []            
+            alpha_map = []
+            if not cfg.DATASET.LOAD_PRECOMPUTE:
+                
+                # raster module
+                frame_idxs = view_trgt[0]['f_idx'].numpy()
+                for batch_idx, frame_idx in enumerate(frame_idxs):
+                    obj_path = view_trgt[0]['obj_path'][batch_idx]
+                    if cur_obj_path != obj_path:
+                        cur_obj_path = obj_path
+                        obj_data = view_dataset.objs[frame_idx]
+                        rasterizer.update_vs(obj_data['v_attr'])
+                    proj = view_trgt[0]['proj'].to(device)[batch_idx, ...]
+                    pose = view_trgt[0]['pose'].to(device)[batch_idx, ...]
+                    dist_coeffs = view_trgt[0]['dist_coeffs'].to(device)[batch_idx, ...]
+                    uv_map_single, alpha_map_single, _, _, _, _, _, _, _, _, _, _, _, _ = \
+                        rasterizer(proj = proj[None, ...], 
+                                    pose = pose[None, ...], 
+                                    dist_coeffs = dist_coeffs[None, ...], 
+                                    offset = None,
+                                    scale = None,
+                                    )                
+                    uv_map.append(uv_map_single[0, ...].clone().detach())
+                    alpha_map.append(alpha_map_single[0, ...].clone().detach())
+                # fix alpha map
+                uv_map = torch.stack(uv_map, dim = 0)
+                alpha_map = torch.stack(alpha_map, dim = 0)[:, None, : , :]
+                # alpha_map = alpha_map * torch.tensor(img_gt[0][:,0,:,:][:,None,:,:] <= (2.0 * 255)).permute(0,2,1,3).to(alpha_map.dtype).to(alpha_map.device)
+            else:            
+                # get view data
+                uv_map = view_trgt[0]['uv_map'].to(device) # [N, H, W, 2]
+                # sh_basis_map = view_trgt[0]['sh_basis_map'].to(device) # [N, H, W, 9]
+                alpha_map = view_trgt[0]['alpha_map'][:, None, :, :].to(device) # [N, 1, H, W]
 
             # sample texture
-            neural_img = texture_mapper(uv_map, sh_basis_map)
+            # neural_img = texture_mapper(uv_map, sh_basis_map)
+            neural_img = texture_mapper(uv_map)
 
             # rendering net
             outputs = render_net(neural_img, None)
@@ -250,14 +299,25 @@ def main():
                     output_final_vs_gt.append(outputs[i].clamp(min = 0., max = 1.))
                     output_final_vs_gt.append(img_gt[i].clamp(min = 0., max = 1.))
                     output_final_vs_gt.append((outputs[i] - img_gt[i]).abs().clamp(min = 0., max = 1.))
+
                 output_final_vs_gt = torch.cat(output_final_vs_gt, dim = 0)
+                raster_uv_maps = torch.cat((uv_map.permute(0,3,1,2),  # N H W 2 -> N 2 H W
+                                    torch.zeros(uv_map.shape[0], 1, img_h, img_w, dtype=uv_map.dtype, device=uv_map.device)),
+                                    dim = 1)
+                writer.add_image("raster_uv_vis",
+                                torchvision.utils.make_grid(raster_uv_maps,
+                                                            nrow = raster_uv_maps[0].shape[0],
+                                                            range = (0, 1),
+                                                            scale_each = False,
+                                                            normalize = False).cpu().detach().numpy()[::-1, :, :], # uv0 -> 0vu (rgb)
+                                                            iter)
                 writer.add_image("output_final_vs_gt",
                                 torchvision.utils.make_grid(output_final_vs_gt,
-                                                            nrow = outputs[0].shape[0],
+                                                            nrow = 3, #outputs[0].shape[0],
                                                             range = (0, 1),
                                                             scale_each = False,
                                                             normalize = False).cpu().detach().numpy(),
-                                iter)
+                                                            iter)
 
             # validation
             if not iter % cfg.TRAIN.VAL_FREQ:
@@ -274,22 +334,51 @@ def main():
                     for view_val_trgt in view_val_dataloader:
                         start_val_i = time.time()
 
-                        # get view data
-                        uv_map = view_val_trgt[0]['uv_map'].to(device)  # [N, H, W, 2]
-                        sh_basis_map = view_val_trgt[0]['sh_basis_map'].to(device)  # [N, H, W, 9]
-                        alpha_map = view_val_trgt[0]['alpha_map'][:, None, :, :].to(device)  # [N, 1, H, W]
+                        # get image
+                        img_gt = []
+                        img_gt.append(view_val_trgt[0]['img_gt'].to(device))
+                        # get uvmap alpha
+                        uv_map = []            
+                        alpha_map = []
+                        if not cfg.DATASET.LOAD_PRECOMPUTE:
+                            # build raster module
+                            frame_idxs = view_val_trgt[0]['f_idx'].numpy()
+                            for batch_idx, frame_idx in enumerate(frame_idxs):
+                                obj_path = view_val_trgt[0]['obj_path'][batch_idx]
+                                if cur_obj_path != obj_path:
+                                    cur_obj_path = obj_path
+                                    obj_data = view_val_dataset.objs[frame_idx]
+                                    rasterizer.update_vs(obj_data['v_attr'])
+                                proj = view_val_trgt[0]['proj'].to(device)[batch_idx, ...]
+                                pose = view_val_trgt[0]['pose'].to(device)[batch_idx, ...]
+                                dist_coeffs = view_val_trgt[0]['dist_coeffs'].to(device)[batch_idx, ...]
+                                uv_map_single, alpha_map_single, _, _, _, _, _, _, _, _, _, _, _, _ = \
+                                    rasterizer(proj = proj[None, ...], 
+                                                pose = pose[None, ...], 
+                                                dist_coeffs = dist_coeffs[None, ...], 
+                                                offset = None,
+                                                scale = None,
+                                                )                
+                                uv_map.append(uv_map_single[0, ...].clone().detach())
+                                alpha_map.append(alpha_map_single[0, ...].clone().detach())
+                            # fix alpha map
+                            uv_map = torch.stack(uv_map, dim = 0)
+                            alpha_map = torch.stack(alpha_map, dim = 0)[:, None, : , :]
+                            # alpha_map = alpha_map * torch.tensor(img_gt[0][:,0,:,:][:,None,:,:] <= (2.0 * 255)).permute(0,2,1,3).to(alpha_map.dtype).to(alpha_map.device)
+                        else:                 
+                            uv_map = view_val_trgt[0]['uv_map'].to(device)  # [N, H, W, 2]
+                            # sh_basis_map = view_val_trgt[0]['sh_basis_map'].to(device)  # [N, H, W, 9]
+                            alpha_map = view_val_trgt[0]['alpha_map'][:, None, :, :].to(device)  # [N, 1, H, W]
+                            
                         view_idx = view_val_trgt[0]['idx']
-
-                        batch_size = alpha_map.shape[0]
-                        img_h = alpha_map.shape[2]
-                        img_w = alpha_map.shape[3]
                         num_view = len(view_val_trgt)
                         img_gt = []
                         for i in range(num_view):
                             img_gt.append(view_val_trgt[i]['img_gt'].to(device))
 
                         # sample texture
-                        neural_img = texture_mapper(uv_map, sh_basis_map)
+                        # neural_img = texture_mapper(uv_map, sh_basis_map)
+                        neural_img = texture_mapper(uv_map)
 
                         # rendering net
                         outputs = render_net(neural_img, None)
@@ -311,20 +400,21 @@ def main():
                                 output_final_vs_gt.append(img_gt[i].clamp(min=0., max=1.))
                                 output_final_vs_gt.append(
                                     (outputs[i] - img_gt[i]).abs().clamp(min=0., max=1.))
+                                    
                             output_final_vs_gt = torch.cat(output_final_vs_gt, dim=0)
                             writer.add_image("output_final_vs_gt_val",
                                              torchvision.utils.make_grid(output_final_vs_gt,
-                                                                         nrow=batch_size,
+                                                                         nrow=3, # outputs[0].shape[0]
                                                                          range=(0, 1),
                                                                          scale_each=False,
                                                                          normalize=False).cpu().detach().numpy(),
-                                             iter)
+                                                                         iter)
 
                         # error metrics
                         err_metrics_batch_i_final = metric.compute_err_metrics_batch(outputs[0] * 255.0,
                                                                                      img_gt[0] * 255.0, alpha_map,
                                                                                      compute_ssim=True)
-
+                        batch_size = view_idx.shape[0]
                         for i in range(batch_size):
                             for key in list(err_metrics_val.keys()):
                                 if key in err_metrics_batch_i_final.keys():

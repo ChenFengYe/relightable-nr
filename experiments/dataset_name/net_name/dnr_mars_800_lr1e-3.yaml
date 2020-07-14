@@ -82,7 +82,7 @@ TEST:
   CALIB_PATH: '_/test_calib/calib20200703_mars_test_360.mat'
   SAMPLING_PATTERN: 'all'
   FORCE_RECOMPUTE: True
-  MODEL_DIR: './data/mars_cx/logs/dnr/07-03_17-27-35_skipinv_10_mars_cx_example/model_epoch_215_iter_60000_.pth' 
+  MODEL_PATH: './data/mars_cx/logs/dnr/07-03_17-27-35_skipinv_10_mars_cx_example/model_epoch_215_iter_60000_.pth' 
   SAVE_FOLDER: 'img_est_38000_f200'
 #  IMAGES_PER_GPU: 1
 #  SCALE_FACTOR: [1]
