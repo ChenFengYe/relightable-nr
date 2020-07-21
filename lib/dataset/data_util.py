@@ -7,8 +7,63 @@ import math
 from scipy.linalg import logm, norm
 import scipy.io
 
+def samping_img_set(img_fp_all, poses_all, sampling_pattern):
+    keep_idxs = []
+    if sampling_pattern == 'all':
+        keep_idxs = list(range(len(img_fp_all)))
+    else:
+        # if sampling_pattern == 'filter':
+        #     img_fp_all_new = []
+        #     poses_all_new = []
+        #     for idx in self.calib['keep_id'][0, :]:
+        #         img_fp_all_new.append(img_fp_all[idx])
+        #         poses_all_new.append(poses_all[idx])
+        #         keep_idxs.append(idx)
+        #     img_fp_all = img_fp_all_new
+        #     poses_all = poses_all_new
+        if sampling_pattern.split('_')[0] == 'first':
+            first_val = int(sampling_pattern.split('_')[-1])
+            img_fp_all = img_fp_all[:first_val]
+            poses_all = poses_all[:first_val]
+            keep_idxs = list(range(first_val))
+        elif sampling_pattern.split('_')[0] == 'after':
+            after_val = int(sampling_pattern.split('_')[-1])
+            keep_idxs = list(range(after_val, len(img_fp_all)))
+            img_fp_all = img_fp_all[after_val:]
+            poses_all = poses_all[after_val:]
+        elif sampling_pattern.split('_')[0] == 'skip':
+            skip_val = int(sampling_pattern.split('_')[-1])
+            img_fp_all_new = []
+            poses_all_new = []
+            for idx in range(0, len(img_fp_all), skip_val):
+                img_fp_all_new.append(img_fp_all[idx])
+                poses_all_new.append(poses_all[idx])
+                keep_idxs.append(idx)
+            img_fp_all = img_fp_all_new
+            poses_all = poses_all_new
+        elif sampling_pattern.split('_')[0] == 'skipinv':
+            skip_val = int(sampling_pattern.split('_')[-1])
+            img_fp_all_new = []
+            poses_all_new = []
+            for idx in range(0, len(img_fp_all)):
+                if idx % skip_val == 0:
+                    continue
+                img_fp_all_new.append(img_fp_all[idx])
+                poses_all_new.append(poses_all[idx])
+                keep_idxs.append(idx)
+            img_fp_all = img_fp_all_new
+            poses_all = poses_all_new
+        elif sampling_pattern.split('_')[0] == 'only':
+            choose_idx = int(sampling_pattern.split('_')[-1])
+            img_fp_all = [img_fp_all[choose_idx]]
+            poses_all = [poses_all[choose_idx]]
+            keep_idxs.append(choose_idx)
+        else:
+            raise ValueError("Unknown sampling pattern!")
+        keep_idxs = np.array(keep_idxs)
+    return img_fp_all, poses_all, keep_idxs
 
-def square_crop_img(img):
+def square_img_crop(img):
     min_dim = np.amin(img.shape[:2])
     center_coord = np.array(img.shape[:2]) // 2
     center_coord_new = np.array([min_dim // 2, min_dim // 2])
@@ -36,7 +91,7 @@ def load_img(filepath, target_size=None, anti_aliasing=True, downsampling_order=
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     if square_crop:
-        img, center_coord, center_coord_new = square_crop_img(img)
+        img, center_coord, center_coord_new = square_img_crop(img)
     else:
         center_coord = np.array(img.shape[:2]) // 2
         center_coord_new = center_coord
@@ -116,12 +171,33 @@ def get_nn_ranking(poses):
 
     return nn_idcs, cos_sim_mat
 
+##################################################
+# camera operation for data augumentation
+##################################################
+def calc_center(mask):
+    grid = np.mgrid[0:mask.shape[0],0:mask.shape[1]]
+    grid_mask = mask[grid[0],grid[1]].astype(np.bool)
+    X = grid[0,grid_mask]
+    Y = grid[1,grid_mask]
+    
+    return np.mean(X),np.mean(Y)
+
+
+def rodrigues_rotation_matrix(axis, theta):
+    axis = np.asarray(axis)
+    theta = np.asarray(theta)
+    axis = axis/math.sqrt(np.dot(axis, axis))
+    a = math.cos(theta/2.0)
+    b, c, d = -axis*math.sin(theta/2.0)
+    aa, bb, cc, dd = a*a, b*b, c*c, d*d
+    bc, ad, ac, ab, bd, cd = b*c, a*d, a*c, a*b, b*d, c*d
+    return np.array([[aa+bb-cc-dd, 2*(bc+ad), 2*(bd-ac)],
+                     [2*(bc-ad), aa+cc-bb-dd, 2*(cd+ab)],
+                     [2*(bd+ac), 2*(cd-ab), aa+dd-bb-cc]])
 
 ##################################################
-##### Utility function for rotation matrices - from https://github.com/akar43/lsm/blob/b09292c6211b32b8b95043f7daf34785a26bce0a/utils.py #####
+# Utility function for rotation matrices - from https://github.com/akar43/lsm/blob/b09292c6211b32b8b95043f7daf34785a26bce0a/utils.py #####
 ##################################################
-
-
 def quat2rot(q):
     '''q = [w, x, y, z]
     https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion'''

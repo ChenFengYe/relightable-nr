@@ -23,7 +23,7 @@ from config import update_config
 
 from utils import camera
 from utils import sph_harm
-from utils import make_gif
+from utils import util
 from shutil import copyfile
 
 def parse_args():
@@ -53,8 +53,7 @@ def main():
     view_dataset = dataio.ViewDataset(cfg,
                                     root_dir = cfg.DATASET.ROOT,
                                     calib_path = cfg.TEST.CALIB_PATH,
-                                    calib_format = 'convert',
-                                    img_size = cfg.DATASET.OUTPUT_SIZE,
+                                    calib_format = cfg.DATASET.CALIB_FORMAT,
                                     sampling_pattern = cfg.TEST.SAMPLING_PATTERN,
                                     is_train = False,
                                     )
@@ -96,6 +95,7 @@ def main():
                             obj_fp = cur_obj_path, 
                             img_size = cfg.DATASET.OUTPUT_SIZE[0],
                             obj_data = obj_data,
+                            camera_mode = cfg.DATASET.CAM_MODE,
                             # preset_uv_path = cfg.DATASET.UV_PATH,
                             global_RT = view_dataset.global_RT)
 
@@ -219,7 +219,7 @@ def main():
             end = time.time()
             print("View %07d   t_total %0.4f" % (inter, end - start))
     
-    make_gif(save_dir_img_est, save_dir_img_est+'.gif')    
+    util.make_gif(save_dir_img_est, save_dir_img_est+'.gif')    
 
 if __name__ == '__main__':
     main()

@@ -3,6 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import yacs
 
 from yacs.config import CfgNode as CN
 
@@ -10,11 +11,10 @@ from yacs.config import CfgNode as CN
 
 _C = CN()
 _C.AUTO_RESUME = True
-_C.GPUS = 0
+_C.GPUS = (0,)
 _C.WORKERS = 8
 _C.RANK = 0
 _C.VERBOSE = True
-# _C.GPUS = (0,)
 # _C.OUTPUT_DIR = ''
 # _C.DATA_DIR = ''
 
@@ -38,6 +38,7 @@ _C.DATASET.GAMMA = 1.0
 _C.DATASET.OUTPUT_SIZE = [512,512]      # Sidelength of generated images. Only less than native resolution of images is recommended
 _C.DATASET.CALIB_PATH = '_/test_calib53/calib20200619_test_mid_53.mat'  # Path of calibration file for inference sequence                                           
 _C.DATASET.CALIB_FORMAT = 'convert'
+_C.DATASET.CAM_MODE = 'projection' # projection or orthogonal
 # 3D computing
 _C.DATASET.PRELOAD_MESHS = False
 _C.DATASET.LOAD_PRECOMPUTE = True
@@ -47,11 +48,9 @@ _C.DATASET.UV_PATH = ''                 # Preset uv for all frame
 # Relight params
 _C.DATASET.LIGHTING_IDX = 0
 # Training data augmentation
-_C.DATASET.MAX_ROTATION = 30
-_C.DATASET.MAX_SCALE = 1.5
-_C.DATASET.MIN_SCALE = 0.75
-_C.DATASET.SCALE_TYPE = 'short'
-_C.DATASET.MAX_TRANSLATE = 10
+_C.DATASET.MAX_SHIFT = 0
+_C.DATASET.MAX_ROTATION = 0
+_C.DATASET.MAX_SCALE = 1.0
 _C.DATASET.FLIP = 0.5
 # train test split
 _C.DATASET.TEST_SET = ''
@@ -113,6 +112,9 @@ _C.TEST.LOG_PROGRESS = False
 
 _C.DEBUG = CN()
 _C.DEBUG.DEBUG = False
+_C.DEBUG.SAVE_TRANSFORMED_IMG = False
+_C.DEBUG.SAVE_TRANSFORMED_MASK = False
+_C.DEBUG.SAVE_NEURAL_TEX = False
 # _C.DEBUG.SAVE_BATCH_IMAGES_GT = False
 # _C.DEBUG.SAVE_BATCH_IMAGES_PRED = False
 # _C.DEBUG.SAVE_HEATMAPS_GT = True
@@ -178,8 +180,9 @@ def update_config(cfg, args):
     #     cfg.DATASET.NUM_JOINTS += 1
     #     cfg.MODEL.NUM_JOINTS = cfg.DATASET.NUM_JOINTS
 
-    # if not isinstance(cfg.DATASET.OUTPUT_SIZE, (list, tuple)):
-    #     cfg.DATASET.OUTPUT_SIZE = [cfg.DATASET.OUTPUT_SIZE]
+    if not isinstance(cfg.DATASET.OUTPUT_SIZE, (list, tuple)):
+        cfg.DATASET.OUTPUT_SIZE = [cfg.DATASET.OUTPUT_SIZE]
+
     # if not isinstance(cfg.LOSS.WITH_HEATMAPS_LOSS, (list, tuple)):
     #     cfg.LOSS.WITH_HEATMAPS_LOSS = (cfg.LOSS.WITH_HEATMAPS_LOSS)
 

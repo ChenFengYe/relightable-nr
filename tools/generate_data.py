@@ -50,7 +50,6 @@ def main():
                                     root_dir = cfg.DATASET.ROOT,
                                     calib_path = cfg.DATASET.CALIB_PATH,
                                     calib_format = cfg.DATASET.CALIB_FORMAT,
-                                    img_size = cfg.DATASET.OUTPUT_SIZE,
                                     sampling_pattern = 'all',
                                     precomp_high_dir = cfg.DATASET.PRECOMP_DIR,
                                     precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
@@ -84,19 +83,19 @@ def main():
                                     use_gcn = False)
     # interpolater
     interpolater = network.Interpolater()
-    # Rasterizer
-    cur_obj_path = ''
-    if not cfg.DATASET.LOAD_PRECOMPUTE:
-        view_data = view_dataset.read_view(0)
-        cur_obj_path = view_data['obj_path']
-        frame_idx = view_data['f_idx']
-        obj_data = view_dataset.objs[frame_idx]
-        rasterizer = network.Rasterizer(cfg,
-                            obj_fp = cur_obj_path, 
-                            img_size = cfg.DATASET.OUTPUT_SIZE[0],
-                            obj_data = obj_data,
-                            # preset_uv_path = cfg.DATASET.UV_PATH,
-                            global_RT = view_dataset.global_RT)
+    # # Rasterizer
+    # cur_obj_path = ''
+    # if not cfg.DATASET.LOAD_PRECOMPUTE:
+    #     view_data = view_dataset.read_view(0)
+    #     cur_obj_path = view_data['obj_path']
+    #     frame_idx = view_data['f_idx']
+    #     obj_data = view_dataset.objs[frame_idx]
+    #     rasterizer = network.Rasterizer(cfg,
+    #                         obj_fp = cur_obj_path, 
+    #                         img_size = cfg.DATASET.OUTPUT_SIZE[0],
+    #                         obj_data = obj_data,
+    #                         # preset_uv_path = cfg.DATASET.UV_PATH,
+    #                         global_RT = view_dataset.global_RT)
 
     print('Loading Model...')
     # load checkpoint
@@ -106,7 +105,7 @@ def main():
     texture_mapper.to(device)
     render_net.to(device)
     interpolater.to(device)
-    rasterizer.to(device)
+    # rasterizer.to(device)
 
     # use multi-GPU
     # if cfg.GPUS != '':
@@ -122,7 +121,11 @@ def main():
     texture_mapper.train()
     render_net.train()
     interpolater.train()
-    rasterizer.train()
+    # rasterizer.train()
+
+    if cfg.DEBUG.SAVE_NEURAL_TEX:
+        neural_tex = texture_mapper.textures[0].cpu().detach().numpy();
+        scipy.io.savemat('./Debug/Nerual_tex.mat', {'tex':neural_tex})
 
     print('Begin inference...')
     inter = 0
@@ -179,10 +182,6 @@ def main():
 
             # sample texture
             neural_img = texture_mapper(uv_map)
-
-            if cfg.DEBUG.DEBUG:
-                neural_tex = texture_mapper.texture_i.cpu().detach().numpy();
-                scipy.io.savemat('./Debug/Nerual_tex.mat', neural_tex)
 
             # rendering net
             outputs = render_net(neural_img, None)

@@ -1,5 +1,6 @@
 .idea/*
 .vscode/*
+.envs/*
 .ipynb_checkpoints/*
 tools/dataset/.ipynb_checkpoints/
 __pycache__/*
@@ -9,7 +10,6 @@ __pycache__/*
 
 Debug/*
 data/*
-lib/neural_renderer/*
 temp/*
 tmp/*
 models/*

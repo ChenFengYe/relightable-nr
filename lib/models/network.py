@@ -108,6 +108,7 @@ class Rasterizer(nn.Module):
                 cfg, 
                 obj_fp, 
                 img_size,
+                camera_mode = 'projection',
                 obj_data = None,
                 preset_uv_path = None,
                 global_RT = None):
@@ -166,10 +167,10 @@ class Rasterizer(nn.Module):
 
         # setup renderer
         renderer = nr.Renderer(image_size = img_size, 
-                                camera_mode = 'projection',
-                                orig_size = img_size,
-                                near = 0.0,
-                                far = 1e5)
+                               camera_mode = camera_mode, # 'projection' or 'orthogonal'
+                               orig_size = img_size,
+                               near = 0.0,
+                               far = 1e5)
         renderer.light_intensity_directional = 0.0
         renderer.light_intensity_ambient = 1.0
         renderer.anti_aliasing = False

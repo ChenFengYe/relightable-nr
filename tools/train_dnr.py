@@ -53,16 +53,16 @@ def main():
     update_config(cfg, args)
     
     # cfg.defrost()
-    # cfg.RANK = args.rank
+    # cfg.RANK = args.ranka
     # cfg.freeze()                                    
-        
     # device allocation
+        
     print('Set device...')
     #print(cfg.GPUS)
     #os.environ["CUDA_VISIBLE_DEVICES"] = cfg.GPUS
     #device = torch.device('cuda')
-    torch.cuda.set_device(cfg.GPUS)
-    device = torch.device('cuda:'+ str(cfg.GPUS))
+    torch.cuda.set_device(cfg.GPUS[0])
+    device = torch.device('cuda:'+ str(cfg.GPUS[0]))
 
     print("Build dataloader ...")
     # load texture
@@ -75,7 +75,6 @@ def main():
                                     root_dir = cfg.DATASET.ROOT,
                                     calib_path = cfg.DATASET.CALIB_PATH,
                                     calib_format = cfg.DATASET.CALIB_FORMAT,
-                                    img_size = cfg.DATASET.OUTPUT_SIZE,
                                     sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN,
                                     precomp_high_dir = cfg.DATASET.PRECOMP_DIR,
                                     precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
@@ -86,7 +85,6 @@ def main():
                                     root_dir = cfg.DATASET.ROOT,
                                     calib_path = cfg.DATASET.CALIB_PATH,
                                     calib_format = cfg.DATASET.CALIB_FORMAT,
-                                    img_size = cfg.DATASET.OUTPUT_SIZE,
                                     sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN_VAL,
                                     precomp_high_dir = cfg.DATASET.PRECOMP_DIR,
                                     precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
@@ -104,6 +102,7 @@ def main():
         rasterizer = network.Rasterizer(cfg,
                             obj_fp = cur_obj_path, 
                             img_size = cfg.DATASET.OUTPUT_SIZE[0],
+                            camera_mode = cfg.DATASET.CAM_MODE,
                             obj_data = obj_data,
                             # preset_uv_path = cfg.DATASET.UV_PATH,
                             global_RT = view_dataset.global_RT)
@@ -160,15 +159,18 @@ def main():
     texture_mapper_module = texture_mapper
     render_net_module = render_net
     # use multi-GPU
-    # if cfg.GPUS != '':
-    #     texture_mapper = nn.DataParallel(texture_mapper)
-    #     render_net = nn.DataParallel(render_net)
-    #     interpolater = nn.DataParallel(interpolater)
+    if len(cfg.GPUS) > 1:
+        texture_mapper = nn.DataParallel(texture_mapper, device_ids = cfg.GPUS)
+        render_net = nn.DataParallel(render_net, device_ids = cfg.GPUS)
+        interpolater = nn.DataParallel(interpolater, device_ids = cfg.GPUS)
+        rasterizer = nn.DataParallel(rasterizer, device_ids = cfg.GPUS)
+        rasterizer = rasterizer.module
+
     # set to training mode
     texture_mapper.train()
     render_net.train()
     interpolater.train()
-    rasterizer.eval()        # no train now
+    rasterizer.eval()      # not train now
 
     part_list = [texture_mapper_module, render_net_module]     # collect all networks
     part_name_list = ['texture_mapper', 'render_net']
@@ -191,12 +193,11 @@ def main():
     data_util.cond_mkdir(val_err_dir)
     copyfile(args.cfg, os.path.join(log_dir, cfg.LOG.CFG_NAME))
 
-    print('Start buffering data for training views...')
-    view_dataset.buffer_all()
+    print('Start buffering data for training and validation...')
     view_dataloader = DataLoader(view_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = cfg.TRAIN.SHUFFLE, num_workers = 8)
-    print('Start buffering data for validation views...')
-    view_val_dataset.buffer_all()
     view_val_dataloader = DataLoader(view_val_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = False, num_workers = 8)
+    #view_dataset.buffer_all()
+    #view_val_dataset.buffer_all()
 
     # Save all command line arguments into a txt file in the logging directory for later referene.
     writer = SummaryWriter(log_dir)
@@ -211,14 +212,14 @@ def main():
         for view_trgt in view_dataloader:
             start = time.time()
 
-            # get image
-            img_gt = []
+            # get image 
+            img_gt = [] 
             img_gt.append(view_trgt[0]['img_gt'].to(device))
+            ROI = view_trgt[0]['ROI'].to(device)
             # get uvmap alpha
             uv_map = []            
             alpha_map = []
-            if not cfg.DATASET.LOAD_PRECOMPUTE:
-                
+            if not cfg.DATASET.LOAD_PRECOMPUTE:                
                 # raster module
                 frame_idxs = view_trgt[0]['f_idx'].numpy()
                 for batch_idx, frame_idx in enumerate(frame_idxs):
@@ -243,6 +244,23 @@ def main():
                 uv_map = torch.stack(uv_map, dim = 0)
                 alpha_map = torch.stack(alpha_map, dim = 0)[:, None, : , :]
                 # alpha_map = alpha_map * torch.tensor(img_gt[0][:,0,:,:][:,None,:,:] <= (2.0 * 255)).permute(0,2,1,3).to(alpha_map.dtype).to(alpha_map.device)
+                
+                # check per iter image
+                for batch_idx, frame_idx in enumerate(frame_idxs):
+                    if cfg.DEBUG.SAVE_TRANSFORMED_IMG:
+                        save_dir_img_gt = './Debug/image_mask'
+                        save_path_img_gt = os.path.join(save_dir_img_gt, '%06d_%03d.png'%(iter, frame_idx))
+                        cv2.imwrite(save_path_img_gt,  cv2.cvtColor(img_gt[0][batch_idx, ...].cpu().detach().numpy().transpose(1,2,0)*255.0, cv2.COLOR_RGB2BGR))
+                        #cv2.imwrite(os.path.join(save_dir_img_gt, '%03d_'%frame_idx + img_fn), cv2.cvtColor(img_gt*255.0, cv2.COLOR_BGR2RGB))
+                        print(' Save img: '+ save_path_img_gt)
+                        
+                    if cfg.DEBUG.SAVE_TRANSFORMED_MASK:
+                        save_alpha_map = alpha_map.permute(0,2,3,1).cpu().detach().numpy()
+                        save_dir_mask = './Debug/image_mask'
+                        save_path_mask = os.path.join(save_dir_mask, '%06d_%03d_mask.png'%(iter, frame_idx))
+                        cv2.imwrite(save_path_mask, save_alpha_map[batch_idx, ...]*255.0)
+                        print(' Save mask: '+ save_path_mask)
+
             else:            
                 # get view data
                 uv_map = view_trgt[0]['uv_map'].to(device) # [N, H, W, 2]
@@ -260,11 +278,16 @@ def main():
             if type(outputs) is not list:
                 outputs = [outputs]
 
-            # We don't enforce a loss on the outermost 5 pixels to alleviate boundary errors, also weight loss by alpha
-            alpha_map_central = alpha_map[:, :, 5:-5, 5:-5]
+            # # We don't enforce a loss on the outermost 5 pixels to alleviate boundary errors, also weight loss by alpha
+            # alpha_map_central = alpha_map[:, :, 5:-5, 5:-5]
+            # for i in range(len(view_trgt)):
+            #     outputs[i] = outputs[i][:, :, 5:-5, 5:-5] * alpha_map_central
+            #     img_gt[i] = img_gt[i][:, :, 5:-5, 5:-5] * alpha_map_central
+
+            # ignore loss outside ROI
             for i in range(len(view_trgt)):
-                outputs[i] = outputs[i][:, :, 5:-5, 5:-5] * alpha_map_central
-                img_gt[i] = img_gt[i][:, :, 5:-5, 5:-5] * alpha_map_central
+                outputs[i] = outputs[i] * ROI * alpha_map
+                img_gt[i] = img_gt[i]* ROI * alpha_map
 
             # loss on final image
             loss_rn = list()
@@ -281,7 +304,8 @@ def main():
 
             # error metrics
             with torch.no_grad():
-                err_metrics_batch_i = metric.compute_err_metrics_batch(outputs[0] * 255.0, img_gt[0] * 255.0, alpha_map_central, compute_ssim = False)
+                err_metrics_batch_i = metric.compute_err_metrics_batch(outputs[0] * 255.0, img_gt[0] * 255.0, alpha_map, compute_ssim = False)
+                # err_metrics_batch_i = metric.compute_err_metrics_batch(outputs[0] * 255.0, img_gt[0] * 255.0, alpha_map_central, compute_ssim = False)
 
             # tensorboard scalar logs of training data
             writer.add_scalar("loss_g", loss_g, iter)
@@ -337,6 +361,7 @@ def main():
                         # get image
                         img_gt = []
                         img_gt.append(view_val_trgt[0]['img_gt'].to(device))
+                        ROI = view_val_trgt[0]['ROI'].to(device)
                         # get uvmap alpha
                         uv_map = []            
                         alpha_map = []
@@ -387,10 +412,10 @@ def main():
                         if type(outputs) is not list:
                             outputs = [outputs]
 
-                        # apply alpha
+                        # apply alpha and ROI
                         for i in range(num_view):
-                            outputs[i] = outputs[i] * alpha_map
-                            img_gt[i] = img_gt[i] * alpha_map
+                            outputs[i] = outputs[i] * alpha_map * ROI
+                            img_gt[i] = img_gt[i] * alpha_map * ROI
 
                         # tensorboard figure logs of validation data
                         if batch_id == val_log_batch_id:
