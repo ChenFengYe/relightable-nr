@@ -337,7 +337,7 @@ def main():
                                                             iter)
                 writer.add_image("output_final_vs_gt",
                                 torchvision.utils.make_grid(output_final_vs_gt,
-                                                            nrow = 3, #outputs[0].shape[0],
+                                                            nrow = outputs[0].shape[0], # 3 
                                                             range = (0, 1),
                                                             scale_each = False,
                                                             normalize = False).cpu().detach().numpy(),
@@ -429,7 +429,7 @@ def main():
                             output_final_vs_gt = torch.cat(output_final_vs_gt, dim=0)
                             writer.add_image("output_final_vs_gt_val",
                                              torchvision.utils.make_grid(output_final_vs_gt,
-                                                                         nrow=3, # outputs[0].shape[0]
+                                                                         nrow=outputs[0].shape[0], # 3
                                                                          range=(0, 1),
                                                                          scale_each=False,
                                                                          normalize=False).cpu().detach().numpy(),

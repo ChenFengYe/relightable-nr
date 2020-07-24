@@ -31,7 +31,7 @@ class ViewDataset():
         self.root_dir = root_dir
         self.calib_format = calib_format
         self.img_dir = cfg.DATASET.IMG_DIR
-        self.img_size = cfg.DATASET.OUTPUT_SIZE,
+        self.img_size = list(cfg.DATASET.OUTPUT_SIZE)
         self.ignore_dist_coeffs = ignore_dist_coeffs
         self.is_train = is_train
 
@@ -206,16 +206,18 @@ class ViewDataset():
             center_coord = img_hw // 2
             center_coord_new = np.array([min_dim // 2, min_dim // 2])
             img_crop_size = np.array([min_dim, min_dim])
+            
+            offset = np.array([center_coord_new[0] - center_coord[0], center_coord_new[1] - center_coord[1]], dtype = np.float32)
+            scale = np.array([self.img_size[0] * 1.0 / (img_crop_size[0] * 1.0), self.img_size[1] * 1.0 / (img_crop_size[1] * 1.0)], dtype = np.float32)
+
+            proj[0, -1] = (proj[0, -1] + offset[1]) * scale[1]
+            proj[1, -1] = (proj[1, -1] + offset[0]) * scale[0]
+            proj[0, 0] *= scale[1]
+            proj[1, 1] *= scale[0]
+
 
         dist_coeffs = self.calib['dist_coeffs'][idx, :]
         dist_coeffs = dist_coeffs if not self.ignore_dist_coeffs else np.zeros(dist_coeffs.shape)
-
-        # offset = np.array([center_coord_new[0] - center_coord[0], center_coord_new[1] - center_coord[1]], dtype = np.float32)
-        # scale = np.array([self.img_size[0] * 1.0 / (img_crop_size[0] * 1.0), self.img_size[1] * 1.0 / (img_crop_size[1] * 1.0)], dtype = np.float32)
-        # proj[0, -1] = (proj[0, -1] + offset[1]) * scale[1]
-        # proj[1, -1] = (proj[1, -1] + offset[0]) * scale[0]
-        # proj[0, 0] *= scale[1]
-        # proj[1, 1] *= scale[0]
 
         view_dir = -pose[2, :3]
         proj_inv = numpy.linalg.inv(proj)
