@@ -2,6 +2,7 @@ import os
 import numpy as np
 import torch
 from collections import OrderedDict
+from shutil import copyfile
 
 import imageio
 import glob
@@ -23,6 +24,13 @@ def print_network(net):
     print("%d" % params)
     return params
 
+def custom_copy(filepath, targetpath, overwrite = True):
+    if os.path.abspath(filepath) == os.path.abspath(targetpath):
+        return
+    if os.path.isfile(targetpath) and overwrite:
+        os.remove(targetpath)
+    copyfile(filepath, targetpath)
+    
 def custom_load(models, names, path, strict = True):
     if type(models) is not list:
         models = [models]

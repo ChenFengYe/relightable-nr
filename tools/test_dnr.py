@@ -141,7 +141,7 @@ def main():
     data_util.cond_mkdir(save_dir_img_est)
     save_dir_sh_basis_map = os.path.join(cfg.TEST.CALIB_DIR, 'resol_' + str(cfg.DATASET.OUTPUT_SIZE[0]), 'precomp', 'sh_basis_map')
     data_util.cond_mkdir(save_dir_sh_basis_map)
-    copyfile(args.cfg, os.path.join(log_dir, cfg.LOG.CFG_NAME))
+    util.custom_copy(args.cfg, os.path.join(log_dir, cfg.LOG.CFG_NAME))    
     
     print('Begin inference...')
     inter = 0

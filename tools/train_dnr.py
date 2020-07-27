@@ -18,17 +18,16 @@ from tensorboardX import SummaryWriter
 
 import _init_paths
 
-from models import network
-from models import metric
+from lib.models import network
+from lib.models import metric
 
-from dataset import dataio
-from dataset import data_util
+from lib.dataset import dataio
+from lib.dataset import data_util
 
-from config import cfg
-from config import update_config
+from lib.config import cfg
+from lib.config import update_config
 
-from utils import util
-from shutil import copyfile
+from lib.utils import util
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -191,7 +190,7 @@ def main():
     data_util.cond_mkdir(val_out_dir)
     data_util.cond_mkdir(val_gt_dir)
     data_util.cond_mkdir(val_err_dir)
-    copyfile(args.cfg, os.path.join(log_dir, cfg.LOG.CFG_NAME))
+    util.custom_copy(args.cfg, os.path.join(log_dir, cfg.LOG.CFG_NAME))    
 
     print('Start buffering data for training and validation...')
     view_dataloader = DataLoader(view_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = cfg.TRAIN.SHUFFLE, num_workers = 8)
