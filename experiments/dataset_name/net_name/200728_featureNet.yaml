@@ -1,0 +1,108 @@
+AUTO_RESUME: True
+GPUS: (0,1)
+VERBOSE: True
+# CUDNN:
+#   BENCHMARK: True
+#   DETERMINISTIC: False
+#   ENABLED: True
+LOG:
+  CFG_NAME: 200729_featureNet_dome_img512_tex512_mipLevel1_lr1e-3.yaml
+  LOG_DIR: log
+  LOGGING_ROOT: ''
+  PRINT_FREQ: 200
+  CHECKPOINT_FREQ: 500
+DATASET:
+  DATASET: realdome_cx
+  DATASET_TEST: realdome_cx
+  
+  ROOT: 'data/realdome_cx'
+  FRAME_RANGE: [20,21]
+  CAM_RANGE: [17]  # [id] for single cam_id
+  IMG_DIR: '_/rgb0/%d/%03d.png'
+  GAMMA: 1.0
+  OUTPUT_SIZE: [512, 512]
+
+  CALIB_PATH: '_/calib.mat'
+  CALIB_FORMAT: 'convert'
+
+  # 3D data
+  TEX_PATH: ''
+  UV_PATH: ''
+  MESH_DIR: '_/mesh/%03d.obj'
+  PRELOAD_MESHS: True
+  LOAD_PRECOMPUTE: False
+
+  # relight
+  LIGHTING_IDX: 0
+  # autgmentation
+  MAX_SHIFT: 50
+  MAX_ROTATION: 30
+  MAX_SCALE: 1.5
+  FLIP: 0.5
+MODEL:
+  INIT_WEIGHTS: True
+  NAME: dnr_unet_512_tex512
+  PRETRAINED: ''
+  TEX_CREATER:
+    NUM_CHANNELS: 3
+    NUM_SIZE: 512  
+  FEATURE_NET:
+    NF0: 64
+    NUM_PARAMS: -1
+  TEX_MAPPER:
+    NUM_CHANNELS: 3
+    NUM_SIZE: 512
+    MIPMAP_LEVEL: 1
+    SH_BASIS: False
+    MERGE_TEX: True
+    NUM_PARAMS: -1
+  RENDER_NET:
+    NF0: 64
+    OUTPUT_CHANNELS: 3
+    NUM_PARAMS: -1
+# LOSS:
+#   NUM_STAGES: 2
+#   AE_LOSS_TYPE: exp
+#   WITH_AE_LOSS: [True, False]
+#   PUSH_LOSS_FACTOR: [0.001, 0.001]
+#   PULL_LOSS_FACTOR: [0.001, 0.001]
+#   WITH_HEATMAPS_LOSS: [True, True]
+#   HEATMAPS_LOSS_FACTOR: [1.0, 1.0]
+TRAIN:
+  EXP_NAME: 'trainTex'
+  BATCH_SIZE: 1
+  BEGIN_EPOCH: 0
+  RESUME: False
+  CHECKPOINT: ''
+  END_EPOCH: 10000
+  GAMMA: 1.0
+  SAMPLING_PATTERN: 'all' # skipinv_10
+  SAMPLING_PATTERN_VAL: 'skip_10'
+  VAL_FREQ: -1
+  SHUFFLE: True # TO-DO
+  LR: 0.001
+#  LR_FACTOR: 0.1
+#  LR_STEP: [200, 260]
+#  OPTIMIZER: adam
+#  MOMENTUM: 0.9
+#  WD: 0.0001
+TEST:
+  BATCH_SIZE: 3
+  FRAME_RANGE: [20,150]
+  CALIB_PATH: '_/test_calib_new/calib20200703_mars_test_360.mat'
+  SAMPLING_PATTERN: 'all'
+  FORCE_RECOMPUTE: False
+  MODEL_PATH: './data/realdome_cx/logs/dnr/07-21_01-58-35_skipinv_10_realdome_cx_trainTex' 
+  SAVE_FOLDER: 'img_est_38000_f200'
+#  IMAGES_PER_GPU: 1
+#  SCALE_FACTOR: [1]
+DEBUG:
+  DEBUG: False
+  SAVE_TRANSFORMED_IMG: False
+  SAVE_TRANSFORMED_MASK: False
+  SAVE_NEURAL_TEX: False
+#   SAVE_BATCH_IMAGES_GT: False
+#   SAVE_BATCH_IMAGES_PRED: False
+#   SAVE_HEATMAPS_GT: True
+#   SAVE_HEATMAPS_PRED: True
+#   SAVE_TAGMAPS_PRED: True

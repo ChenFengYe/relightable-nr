@@ -16,12 +16,62 @@ from utils import render
 from utils import camera
 from dataset import data_util
 
+class TextureCreater(nn.Module):
+    def __init__(self,
+                texture_size,
+                texture_num_ch,
+                fix_texture = True):
+        super(TextureCreater, self).__init__()
+
+        self.register_buffer('texture_size', torch.tensor(texture_size))
+        self.register_buffer('texture_num_ch', torch.tensor(texture_num_ch))
+        
+        texture = torch.ones(1, texture_size, texture_size, self.texture_num_ch, dtype = torch.float32)
+        self.texture = texture
+
+        # fix_texture:
+        if fix_texture:
+            self.texture.requires_grad = False
+        
+    def forward(self, img, uv_map):
+        '''
+        img: [N, C, H, W], C == 3
+        uv_map: [N, H, W, C], C == 2
+        texture_size: S
+        return: [N, S, S, C], C == 3
+        '''        
+        texture_size = np.round(self.texture_size.cpu().numpy()).astype(np.int)
+
+        # upsize img uv_map
+        if False:
+            uv_map_HR = torch.nn.functional.interpolate(uv_map.permute(0,3,1,2),  # [N, H, W, C] to [N, C, H, W]
+                                            size = (4*texture_size, 4*texture_size),
+                                            mode = 'bilinear',
+                                            align_corners = True).permute(0,2,3,1) # grid need [N, H, W, C]
+            img_HR = torch.nn.functional.interpolate(img,
+                                            size = (4*texture_size, 4*texture_size),
+                                            mode = 'bilinear',
+                                            align_corners = True)
+        else:
+            uv_map_HR = uv_map
+            img_HR = img
+
+        uv_map_unit_texel = (uv_map_HR * (texture_size - 1))
+        uv_map_unit_texel[..., -1] = texture_size - 1 - uv_map_unit_texel[..., -1]
+       
+        # creat texture
+        sub_u = uv_map_unit_texel[..., 0]
+        sub_v = uv_map_unit_texel[..., 1]
+        self.texture = misc.interpolate_bilinear_inv(img_HR, sub_u, sub_v, texture_size)
+        
+        return self.texture
 
 class TextureMapper(nn.Module):
     def __init__(self,
                 texture_size,
                 texture_num_ch,
                 mipmap_level, 
+                texture_merge = False,
                 texture_init = None,
                 fix_texture = False,
                 apply_sh = False):
@@ -38,6 +88,10 @@ class TextureMapper(nn.Module):
         self.register_buffer('texture_num_ch', torch.tensor(texture_num_ch))
         self.register_buffer('mipmap_level', torch.tensor(mipmap_level))
         self.register_buffer('apply_sh', torch.tensor(apply_sh))
+        self.register_buffer('texture_merge', torch.tensor(texture_merge))
+
+        if texture_merge and mipmap_level != 1:
+            raise ValueError('Texture merge not support mipmap now!')
 
         # create textures as images
         self.textures = nn.ParameterList([])
@@ -64,15 +118,35 @@ class TextureMapper(nn.Module):
             for i in range(self.mipmap_level):
                 self.textures[i].requires_grad = False
 
-    def forward(self, uv_map, sh_basis_map = None, sh_start_ch = 3):
+    def forward(self, uv_map, neural_tex = None, sh_basis_map = None, sh_start_ch = 3):
         '''
         uv_map: [N, H, W, C]
+        neural_tex: [1, C, H, W]
         sh_basis_map: [N, H, W, 9]
         return: [N, C, H, W]
+
+        self.textures[0]: [1, H, W, C]
         '''
+        if self.texture_merge and neural_tex is not None:
+            if neural_tex.shape[2:4] != self.textures[0].shape[1:3]:
+                print(neural_tex.shape)
+                print(self.textures[0].shape)
+                raise ValueError('Input nerual tex shape is not equal to max size of textures')
+            self.textures[0] = torch.nn.Parameter(neural_tex.permute((0,2,3,1)))
+                    
         for ithLevel in range(self.mipmap_level):
             texture_size_i = self.textures_size[ithLevel]
             texture_i = self.textures[ithLevel]
+
+            # # vertex texcoords map in [-1, 1]
+            # grid_uv_map = uv_map * 2 - 1
+
+            # # sample from texture (bilinear)
+            # if ithLevel == 0:
+            #     output = torch.nn.functional.grid_sample(texture_i.permute(0, 3, 1, 2), grid_uv_map, mode='bilinear', padding_mode='zeros') # , align_corners=False
+            # else:
+            #     output = output + torch.nn.functional.grid_sample(texture_i.permute(0, 3, 1, 2), grid_uv_map, mode='bilinear', padding_mode='zeros') # , align_corners=False
+            # # [N, C, H, W]
 
             # vertex texcoords map in unit of texel
             uv_map_unit_texel = (uv_map * (texture_size_i - 1))
@@ -87,7 +161,7 @@ class TextureMapper(nn.Module):
         # apply spherical harmonics
         if self.apply_sh and sh_basis_map is not None:
             output[:, sh_start_ch:sh_start_ch + 9, :, :] = output[:, sh_start_ch:sh_start_ch + 9, :, :] * sh_basis_map.permute((0, 3, 1, 2))
-
+        
         return output
 
     def flatten_mipmap(self, start_ch, end_ch):
@@ -98,7 +172,7 @@ class TextureMapper(nn.Module):
                 out = out + torch.nn.functional.interpolate(self.textures[ithLevel][..., start_ch:end_ch].permute(0, 3, 1, 2),
                     size = (self.textures_size[0], self.textures_size[0]),
                     mode = 'bilinear',
-                    align_corners = True, # chenxin-200708 try fix warning from pytorch
+                    align_corners = True,
                     ).permute(0, 2, 3, 1)
         return out
 
@@ -286,6 +360,54 @@ class RenderingNet(nn.Module):
         x = self.net(input, v_fea)
         return self.tanh(x)
 
+class FeatureNet(nn.Module):
+    def __init__(self,
+                 nf0,
+                 in_channels,
+                 out_channels,
+                 num_down_unet = 5,
+                 out_channels_gcn = 512,
+                 use_gcn = True,
+                 outermost_highway_mode = 'concat'):
+        super().__init__()
+
+        self.register_buffer('nf0', torch.tensor(nf0))
+        self.register_buffer('in_channels', torch.tensor(in_channels))
+        self.register_buffer('out_channels', torch.tensor(out_channels))
+        self.register_buffer('num_down_unet', torch.tensor(num_down_unet))
+        self.register_buffer('out_channels_gcn', torch.tensor(out_channels_gcn))
+
+        self.net = Unet(in_channels = in_channels,
+                 out_channels = out_channels,
+                 outermost_linear = True,
+                 use_dropout = True,
+                 dropout_prob = 0.1,
+                 nf0 = nf0,
+                 norm = nn.BatchNorm2d,
+                 max_channels = 8 * nf0,
+                 num_down = num_down_unet,
+                 out_channels_gcn = out_channels_gcn,
+                 use_gcn = use_gcn,
+                 outermost_highway_mode = outermost_highway_mode)
+
+        self.tanh = nn.Tanh()
+
+    def forward(self, orig_texs, neural_tex, v_fea = None):
+        '''
+        orig_tex: [N, H, W, 3]
+        neural_tex: [1, H, W, C]       
+        return: [N, C, H, W]
+        '''
+        # cat neural tex for each batch
+        repeat_size = (int(orig_texs.shape[0]/neural_tex.shape[0]),1,1,1)
+        neural_texs = neural_tex.repeat(repeat_size)
+        cat_texs = torch.cat((orig_texs, neural_texs), 3).permute(0,3,1,2)
+
+        x = self.net(cat_texs, v_fea)
+
+        # average each batch
+        x_mean = torch.mean(x, dim=0, keepdim=True)
+        return self.tanh(x_mean)
 
 class DenseDeepGCN(torch.nn.Module):
     def __init__(self, opt):

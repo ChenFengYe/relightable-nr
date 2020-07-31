@@ -1,6 +1,41 @@
 import numpy as np
 import torch
 
+def interpolate_bilinear_inv(img, sub_u, sub_v, texture_size):
+    '''
+    inverse fucntion of interpolation_bilinear
+    convert data back to xy domain
+
+    img: [N, C, H, W] 
+    uv_map: [N, H, W, C] 
+    texture_size: S
+    return: [N, S, S, C]
+    '''
+    device = img.device
+    batch_size = img.shape[0]
+    channel = img.shape[1]
+
+    # convert uv_map (atlas/texture to img)
+    #           to
+    #         tex_grid (img to atlas)    
+    # N = uv_map.shape[0]
+    # tex_grid = torch.ones(N, texture_size, texture_size, 2, dtype=torch.float32).to(device)
+    output = torch.zeros(batch_size, channel, texture_size, texture_size).to(device)
+    
+    coord_nxy = torch.nonzero(sub_u)
+    coord_n = coord_nxy[:,0]
+    coord_x = coord_nxy[:,1]
+    coord_y = coord_nxy[:,2]
+
+    u_cur = torch.floor(sub_u[coord_n, coord_x, coord_y]).long().to(device)
+    v_cur = torch.floor(sub_v[coord_n, coord_x, coord_y]).long().to(device)
+
+    u_cur = torch.clamp(u_cur, 0, texture_size - 1)
+    v_cur = torch.clamp(v_cur, 0, texture_size - 1)
+
+    output[coord_n, :, u_cur, v_cur] = img[coord_n, :, coord_x, coord_y]
+
+    return output.permute(0,2,3,1)
 
 def interpolate_bilinear(data, sub_x, sub_y):
     '''
