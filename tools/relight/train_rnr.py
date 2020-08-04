@@ -14,12 +14,11 @@ import torch_geometric.data
 import neural_renderer as nr
 
 from dataset import dataio
-from dataset import data_util
-from utils import util
 from models import metric
 
 from models import network
 import render
+from utils import util
 from utils import misc
 from utils import sph_harm
 
@@ -448,24 +447,24 @@ def main():
 
     # directory for logging
     log_dir = os.path.join(cfg.LOG.LOGGING_ROOT, dir_name)
-    data_util.cond_mkdir(log_dir)
+    util.cond_mkdir(log_dir)
 
     # directory for saving validation data on view synthesis
     val_out_dir = os.path.join(log_dir, 'val_out')
     val_gt_dir = os.path.join(log_dir, 'val_gt')
     val_err_dir = os.path.join(log_dir, 'val_err')
-    data_util.cond_mkdir(val_out_dir)
-    data_util.cond_mkdir(val_gt_dir)
-    data_util.cond_mkdir(val_err_dir)
+    util.cond_mkdir(val_out_dir)
+    util.cond_mkdir(val_gt_dir)
+    util.cond_mkdir(val_err_dir)
 
     # directory for saving validation data on relighting
     val_relight_out_dir = os.path.join(log_dir, 'val_relight_out')
-    data_util.cond_mkdir(val_relight_out_dir)
+    util.cond_mkdir(val_relight_out_dir)
     if has_view_relight:
         val_relight_gt_dir = os.path.join(log_dir, 'val_relight_gt')
         val_relight_err_dir = os.path.join(log_dir, 'val_relight_err')
-        data_util.cond_mkdir(val_relight_gt_dir)
-        data_util.cond_mkdir(val_relight_err_dir)
+        util.cond_mkdir(val_relight_gt_dir)
+        util.cond_mkdir(val_relight_err_dir)
 
     # Save all command line arguments into a txt file in the logging directory for later reference.
     with open(os.path.join(log_dir, "params.txt"), "w") as out_file:

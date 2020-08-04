@@ -10,7 +10,6 @@ import scipy.io
 from collections import OrderedDict
 
 from dataset import dataio
-from dataset import data_util
 from utils import util
 
 from models import network
@@ -257,7 +256,7 @@ def main():
     
     log_dir = cfg.TEST.MODEL_DIR.split('/')
     log_dir = os.path.join(cfg.TEST.CALIB_DIR, 'resol_' + str(cfg.DATASET.OUTPUT_SIZE[0]), log_dir[-2], log_dir[-1].split('_')[0] + '_' + log_dir[-1].split('_')[1] + '_' + cfg.TEST.MODEL_NAME.split('-')[-1].split('.')[0])
-    data_util.cond_mkdir(log_dir)
+    util.cond_mkdir(log_dir)
 
     # get estimated illumination
     lp_est = lighting_model_train.to(device)
@@ -265,10 +264,10 @@ def main():
     cv2.imwrite(log_dir + '/lp_est.png', lp_est.cpu().detach().numpy()[0, :, :, ::-1] * 255.0)
 
     save_dir_alpha_map = os.path.join(log_dir, 'alpha_map')
-    data_util.cond_mkdir(save_dir_alpha_map)
+    util.cond_mkdir(save_dir_alpha_map)
 
     save_dir_sh_basis_map = os.path.join(cfg.TEST.CALIB_DIR, 'resol_' + str(cfg.DATASET.OUTPUT_SIZE[0]), 'precomp', 'sh_basis_map')
-    data_util.cond_mkdir(save_dir_sh_basis_map)
+    util.cond_mkdir(save_dir_sh_basis_map)
 
     # Save all command line arguments into a txt file in the logging directory for later reference.
     with open(os.path.join(log_dir, "params.txt"), "w") as out_file:
@@ -378,7 +377,7 @@ def main():
                 print('Lighting', lighting_idx)
 
                 save_dir_img_est = os.path.join(log_dir, 'img_est_' + opt.lighting_type + '_' + str(lighting_idx).zfill(3))
-                data_util.cond_mkdir(save_dir_img_est)
+                util.cond_mkdir(save_dir_img_est)
 
                 # render using ray_renderer
                 t_render = time.time()
@@ -394,7 +393,7 @@ def main():
                 if opt.save_img_bg:
                     save_dir_img_bg = os.path.join(log_dir,
                                                    'img_bg_' + opt.lighting_type + '_' + str(lighting_idx).zfill(3))
-                    data_util.cond_mkdir(save_dir_img_bg)
+                    util.cond_mkdir(save_dir_img_bg)
 
                     # get view uv on light probe
                     view_uv_map = render.spherical_mapping_batch(-view_dir_map.transpose(1, -1)).transpose(1, -1)  # [N, H, W, 2]

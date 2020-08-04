@@ -155,11 +155,6 @@ def interpolate_views(pose_1, pose_2, num_steps=100):
     return poses
 
 
-def cond_mkdir(path):
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-
 def get_nn_ranking(poses):
     # Calculate the ranking of nearest neigbors
     parsed_poses = np.stack([pose[:3,2] for pose in poses], axis=0)

@@ -1,5 +1,5 @@
 AUTO_RESUME: True
-GPUS: (0,1)
+GPUS: (2,)
 VERBOSE: True
 # CUDNN:
 #   BENCHMARK: True
@@ -10,13 +10,13 @@ LOG:
   LOG_DIR: log
   LOGGING_ROOT: ''
   PRINT_FREQ: 200
-  CHECKPOINT_FREQ: 500
+  CHECKPOINT_FREQ: 2000
 DATASET:
   DATASET: realdome_cx
   DATASET_TEST: realdome_cx
   
   ROOT: 'data/realdome_cx'
-  FRAME_RANGE: [20,21]
+  FRAME_RANGE: [20,150]
   CAM_RANGE: [17]  # [id] for single cam_id
   IMG_DIR: '_/rgb0/%d/%03d.png'
   GAMMA: 1.0
@@ -30,6 +30,7 @@ DATASET:
   UV_PATH: ''
   MESH_DIR: '_/mesh/%03d.obj'
   PRELOAD_MESHS: True
+  PRELOAD_VIEWS: False  
   LOAD_PRECOMPUTE: False
 
   # relight
@@ -45,9 +46,10 @@ MODEL:
   PRETRAINED: ''
   TEX_CREATER:
     NUM_CHANNELS: 3
-    NUM_SIZE: 512  
+    NUM_SIZE: 512
   FEATURE_NET:
     NF0: 64
+    NUM_DOWN: 5
     NUM_PARAMS: -1
   TEX_MAPPER:
     NUM_CHANNELS: 3
@@ -58,6 +60,7 @@ MODEL:
     NUM_PARAMS: -1
   RENDER_NET:
     NF0: 64
+    NUM_DOWN: 5
     OUTPUT_CHANNELS: 3
     NUM_PARAMS: -1
 # LOSS:
@@ -69,8 +72,8 @@ MODEL:
 #   WITH_HEATMAPS_LOSS: [True, True]
 #   HEATMAPS_LOSS_FACTOR: [1.0, 1.0]
 TRAIN:
-  EXP_NAME: 'trainTex'
-  BATCH_SIZE: 1
+  EXP_NAME: 'FixLighting'
+  BATCH_SIZE: 2
   BEGIN_EPOCH: 0
   RESUME: False
   CHECKPOINT: ''
@@ -79,7 +82,7 @@ TRAIN:
   SAMPLING_PATTERN: 'all' # skipinv_10
   SAMPLING_PATTERN_VAL: 'skip_10'
   VAL_FREQ: -1
-  SHUFFLE: True # TO-DO
+  SHUFFLE: True
   LR: 0.001
 #  LR_FACTOR: 0.1
 #  LR_STEP: [200, 260]

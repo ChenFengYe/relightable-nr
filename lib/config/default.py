@@ -15,7 +15,7 @@ _C.GPUS = (0,)
 _C.WORKERS = 8
 _C.RANK = 0
 _C.VERBOSE = True
-# _C.OUTPUT_DIR = ''
+_C.OUTPUT_DIR = ''
 # _C.DATA_DIR = ''
 
 _C.LOG = CN()
@@ -41,6 +41,7 @@ _C.DATASET.CALIB_FORMAT = 'convert'
 _C.DATASET.CAM_MODE = 'projection' # projection or orthogonal
 # 3D computing
 _C.DATASET.PRELOAD_MESHS = False
+_C.DATASET.PRELOAD_VIEWS = False
 _C.DATASET.LOAD_PRECOMPUTE = True
 _C.DATASET.TEX_PATH = ''
 _C.DATASET.UV_PATH = ''                 # Preset uv for all frame
@@ -73,9 +74,11 @@ _C.MODEL.TEX_MAPPER.MERGE_TEX = True     # Whether merge texture different train
 _C.MODEL.TEX_MAPPER.NUM_PARAMS = -1
 _C.MODEL.FEATURE_NET = CN()
 _C.MODEL.FEATURE_NET.NF0 = 64            # Number of features in outermost layer of U-Net architectures
+_C.MODEL.FEATURE_NET.NUM_DOWN = 5
 _C.MODEL.FEATURE_NET.NUM_PARAMS = -1
 _C.MODEL.RENDER_NET = CN()
 _C.MODEL.RENDER_NET.NF0 = 64            # Number of features in outermost layer of U-Net architectures
+_C.MODEL.RENDER_NET.NUM_DOWN = 5
 _C.MODEL.RENDER_NET.OUTPUT_CHANNELS =3
 _C.MODEL.RENDER_NET.NUM_PARAMS = -1
 

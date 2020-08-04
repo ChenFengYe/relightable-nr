@@ -5,7 +5,7 @@
 # cv2.imwrite('/data/NFS/new_disk/chenxin/relightable-nr/data/realdome_cx/logs/dnr/test_255.png', test_map[0,:,:,:] * 255.)
 
 import argparse
-import os, time, datetime
+import os, time
 
 import torch
 from torch import nn
@@ -22,12 +22,12 @@ from lib.models import network
 from lib.models import metric
 
 from lib.dataset import dataio
-from lib.dataset import data_util
 
 from lib.config import cfg
 from lib.config import update_config
 
 from lib.utils import util
+import datetime
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -50,25 +50,23 @@ def main():
     print('Load config...')
     args = parse_args()
     update_config(cfg, args)
-    
-    # cfg.defrost()
-    # cfg.RANK = args.ranka
-    # cfg.freeze()                                    
-    # device allocation
-        
-    print('Set device...')
+
+    print("Setup Log ...")
+    log_dir, iter, checkpoint_path = util.create_logger(cfg, args.cfg)
+    print(args)
+    print(cfg)
+    print("*" * 100)
+
+    print('Set device...' + str(cfg.GPUS[0]))
+    print(' Batch size: '+ str(cfg.TRAIN.BATCH_SIZE))
     #print(cfg.GPUS)
     #os.environ["CUDA_VISIBLE_DEVICES"] = cfg.GPUS
     #device = torch.device('cuda')
     torch.cuda.set_device(cfg.GPUS[0])
-    device = torch.device('cuda:'+ str(cfg.GPUS[0]))
-
+    device = torch.device('cuda:'+ str(cfg.GPUS[0]))    
+    print("*" * 100)
+    
     print("Build dataloader ...")
-    # load texture
-    if cfg.DATASET.TEX_PATH:
-        texture_init = cv2.cvtColor(cv2.imread(cfg.DATASET.TEX_PATH), cv2.COLOR_BGR2RGB)
-        texture_init_resize = cv2.resize(texture_init, (cfg.MODEL.TEX_MAPPER.NUM_SIZE, cfg.MODEL.TEX_MAPPER.NUM_SIZE), interpolation = cv2.INTER_AREA).astype(np.float32) / 255.0
-        texture_init_use = torch.from_numpy(texture_init_resize).to(device)
     # dataset for training views
     view_dataset = dataio.ViewDataset(cfg = cfg, 
                                     root_dir = cfg.DATASET.ROOT,
@@ -90,8 +88,100 @@ def main():
                                         precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
                                         )
         num_view_val = len(view_val_dataset)
+    print("*" * 100)
 
     print('Build Network...')
+    # texture creater
+    texture_creater = network.TextureCreater(texture_size = cfg.MODEL.TEX_CREATER.NUM_SIZE,
+                                            texture_num_ch = cfg.MODEL.TEX_CREATER.NUM_CHANNELS)
+    # render net
+    feature_net = network.FeatureNet(nf0 = cfg.MODEL.FEATURE_NET.NF0,
+                                in_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS + cfg.MODEL.TEX_CREATER.NUM_CHANNELS,
+                                out_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
+                                num_down_unet = cfg.MODEL.FEATURE_NET.NUM_DOWN,
+                                use_gcn = False)
+    # texture mapper
+    texture_mapper = network.TextureMapper(texture_size = cfg.MODEL.TEX_MAPPER.NUM_SIZE,
+                                            texture_num_ch = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
+                                            texture_merge = cfg.MODEL.TEX_MAPPER.MERGE_TEX,
+                                            mipmap_level = cfg.MODEL.TEX_MAPPER.MIPMAP_LEVEL,
+                                            apply_sh = cfg.MODEL.TEX_MAPPER.SH_BASIS)
+    # render net
+    render_net = network.RenderingNet(nf0 = cfg.MODEL.RENDER_NET.NF0,
+                                in_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
+                                out_channels = 3,
+                                num_down_unet = cfg.MODEL.RENDER_NET.NUM_DOWN,
+                                use_gcn = False)
+    # interpolater
+    #interpolater = network.Interpolater()
+
+    # L1 loss
+    criterionL1 = nn.L1Loss(reduction='mean').to(device)
+    # Optimizer
+    optimizerG = torch.optim.Adam(list(texture_mapper.parameters()) + 
+                            list(feature_net.parameters()) + 
+                            list(render_net.parameters()), lr = cfg.TRAIN.LR)
+            
+    print('Loading Model...')
+    if checkpoint_path:
+        print(' Checkpoint_path : %s'%(checkpoint_path))
+        util.custom_load([feature_net, texture_mapper, render_net], ['feature_net', 'texture_mapper', 'render_net'], checkpoint_path)
+    else:
+        print(' Not load params. ')
+
+    texture_creater.to(device)
+    texture_mapper.to(device)
+    feature_net.to(device)
+    render_net.to(device)
+    #interpolater.to(device)
+
+    texture_mapper_module = texture_mapper
+    feature_net_module = feature_net
+    render_net_module = render_net
+
+    # use multi-GPU
+    if len(cfg.GPUS) > 1:
+        print('Using multi gpus ' + str(cfg.GPUS))
+        texture_creater = nn.DataParallel(texture_creater, device_ids = cfg.GPUS)
+        texture_mapper = nn.DataParallel(texture_mapper, device_ids = cfg.GPUS)
+        feature_net = nn.DataParallel(feature_net, device_ids = cfg.GPUS)
+        render_net = nn.DataParallel(render_net, device_ids = cfg.GPUS)
+        #interpolater = nn.DataParallel(interpolater, device_ids = cfg.GPUS)
+
+        texture_mapper_module = texture_mapper.module
+        feature_net_module = feature_net.module
+        render_net_module = render_net.module
+        
+    # set to training mode
+    texture_creater.eval()
+    texture_mapper.train()
+    feature_net.train()
+    render_net.train()
+    #interpolater.train()
+
+    part_list = [feature_net_module, texture_mapper_module, render_net_module]     # collect all networks
+    part_name_list = ['feature_net', 'texture_mapper', 'render_net']
+    print(" number of generator parameters:")
+    cfg.defrost()
+    cfg.MODEL.TEX_MAPPER.NUM_PARAMS = util.print_network(texture_mapper).item()
+    cfg.MODEL.FEATURE_NET.NUM_PARAMS = util.print_network(feature_net).item()
+    cfg.MODEL.RENDER_NET.NUM_PARAMS = util.print_network(render_net).item()
+    cfg.freeze()
+    print("*" * 100)
+
+    print('Start buffering data for training...')
+    view_dataloader = DataLoader(view_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = cfg.TRAIN.SHUFFLE, num_workers = 8)
+    view_dataset.buffer_all()
+    # validation
+    if cfg.TRAIN.VAL_FREQ > 0:
+        print('Start buffering data for validation...')     
+        view_val_dataloader = DataLoader(view_val_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = False, num_workers = 8)
+        view_val_dataset.buffer_all()
+
+    # Save all command line arguments into a txt file in the logging directory for later referene.
+    writer = SummaryWriter(log_dir)
+    # iter = cfg.TRAIN.BEGIN_EPOCH * len(view_dataset) # pre model is batch-1
+
     # Rasterizer
     cur_obj_path = ''
     if not cfg.DATASET.LOAD_PRECOMPUTE:
@@ -106,129 +196,15 @@ def main():
                             obj_data = obj_data,
                             # preset_uv_path = cfg.DATASET.UV_PATH,
                             global_RT = view_dataset.global_RT)
-    # texture creater
-    texture_creater = network.TextureCreater(texture_size = cfg.MODEL.TEX_CREATER.NUM_SIZE,
-                                            texture_num_ch = cfg.MODEL.TEX_CREATER.NUM_CHANNELS)
-    # render net
-    feature_net = network.FeatureNet(nf0 = cfg.MODEL.FEATURE_NET.NF0,
-                                in_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS + cfg.MODEL.TEX_CREATER.NUM_CHANNELS,
-                                out_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
-                                num_down_unet = 5,
-                                use_gcn = False)
-    # texture mapper
-    texture_mapper = network.TextureMapper(texture_size = cfg.MODEL.TEX_MAPPER.NUM_SIZE,
-                                            texture_num_ch = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
-                                            texture_merge = cfg.MODEL.TEX_MAPPER.MERGE_TEX,
-                                            mipmap_level = cfg.MODEL.TEX_MAPPER.MIPMAP_LEVEL,
-                                            apply_sh = cfg.MODEL.TEX_MAPPER.SH_BASIS)
-    # render net
-    render_net = network.RenderingNet(nf0 = cfg.MODEL.RENDER_NET.NF0,
-                                in_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
-                                out_channels = 3,
-                                num_down_unet = 5,
-                                use_gcn = False)
-    # interpolater
-    interpolater = network.Interpolater()
-
-    # L1 loss
-    criterionL1 = nn.L1Loss(reduction='mean').to(device)
-    # Optimizer
-    optimizerG = torch.optim.Adam(list(texture_mapper.parameters()) + 
-                            list(feature_net.parameters()) + 
-                            list(render_net.parameters()), lr = cfg.TRAIN.LR)
-
-    print('Loading Model...')
-    iter = 0
-    dir_name = os.path.join(datetime.datetime.now().strftime('%m-%d') + 
-                            '_' + datetime.datetime.now().strftime('%H-%M-%S') +
-                            '_' + cfg.TRAIN.SAMPLING_PATTERN +
-                            '_' + cfg.DATASET.ROOT.strip('/').split('/')[-1])
-    if cfg.TRAIN.EXP_NAME is not '':
-        dir_name += '_' + cfg.TRAIN.EXP_NAME
-    if cfg.AUTO_RESUME:
-        checkpoint_path = ''
-        if cfg.TRAIN.RESUME and cfg.TRAIN.CHECKPOINT:
-             checkpoint_path = cfg.TRAIN.CHECKPOINT
-             dir_name = cfg.TRAIN.CHECKPOINT_DIR
-             nums = [int(s) for s in cfg.TRAIN.CHECKPOINT_NAME.split('_') if s.isdigit()]
-             cfg.defrost()
-             cfg.TRAIN.BEGIN_EPOCH = nums[0] + 1
-             cfg.freeze()
-             iter = nums[1] + 1
-        elif cfg.MODEL.PRETRAINED:
-            checkpoint_path = cfg.MODEL.PRETRAIN
-    if checkpoint_path:
-        print(' Checkpoint_path : %s'%(checkpoint_path))
-        util.custom_load([feature_net, texture_mapper, render_net], ['feature_net', 'texture_mapper', 'render_net'], checkpoint_path)
-    else:
-        print(' Not load params. ')
-
-    texture_creater.to(device)
-    texture_mapper.to(device)
-    feature_net.to(device)
-    render_net.to(device)
-    interpolater.to(device)
     rasterizer.to(device)
-
-    texture_mapper_module = texture_mapper
-    feature_net_module = feature_net
-    render_net_module = render_net
-    # use multi-GPU
     if len(cfg.GPUS) > 1:
-        texture_creater = nn.DataParallel(texture_creater, device_ids = cfg.GPUS)
-        texture_mapper = nn.DataParallel(texture_mapper, device_ids = cfg.GPUS)
-        feature_net = nn.DataParallel(feature_net, device_ids = cfg.GPUS)
-        render_net = nn.DataParallel(render_net, device_ids = cfg.GPUS)
-        interpolater = nn.DataParallel(interpolater, device_ids = cfg.GPUS)
         rasterizer = nn.DataParallel(rasterizer, device_ids = cfg.GPUS)
         rasterizer = rasterizer.module
-
-    # set to training mode
-    texture_creater.train()
-    texture_mapper.train()
-    feature_net.train()
-    render_net.train()
-    interpolater.train()
     rasterizer.eval()      # not train now
-
-    part_list = [feature_net_module, texture_mapper_module, render_net_module]     # collect all networks
-    part_name_list = ['feature_net', 'texture_mapper', 'render_net']
-    print("*" * 100)
-    print("Number of generator parameters:")
-    cfg.defrost()
-    cfg.MODEL.TEX_MAPPER.NUM_PARAMS = util.print_network(texture_mapper).item()
-    cfg.MODEL.FEATURE_NET.NUM_PARAMS = util.print_network(feature_net).item()
-    cfg.MODEL.RENDER_NET.NUM_PARAMS = util.print_network(render_net).item()
-    cfg.freeze()
-    print("*" * 100)
-
-    print("Setup Log ...")
-    log_dir = os.path.join(cfg.LOG.LOGGING_ROOT, dir_name)
-    data_util.cond_mkdir(log_dir)
-    val_out_dir = os.path.join(log_dir, 'val_out')
-    val_gt_dir = os.path.join(log_dir, 'val_gt')
-    val_err_dir = os.path.join(log_dir, 'val_err')
-    data_util.cond_mkdir(val_out_dir)
-    data_util.cond_mkdir(val_gt_dir)
-    data_util.cond_mkdir(val_err_dir)
-    util.custom_copy(args.cfg, os.path.join(log_dir, cfg.LOG.CFG_NAME))    
-
-    print('Start buffering data for training...')
-    view_dataloader = DataLoader(view_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = cfg.TRAIN.SHUFFLE, num_workers = 8)
-    if cfg.TRAIN.VAL_FREQ > 0:
-        print('Start buffering data for validation...')     
-        view_val_dataloader = DataLoader(view_val_dataset, batch_size = cfg.TRAIN.BATCH_SIZE, shuffle = False, num_workers = 8)
-    #view_dataset.buffer_all()
-    #view_val_dataset.buffer_all()
-
-    # Save all command line arguments into a txt file in the logging directory for later referene.
-    writer = SummaryWriter(log_dir)
-    # iter = cfg.TRAIN.BEGIN_EPOCH * len(view_dataset) # pre model is batch-1
-
+    
     print('Begin training...')
     # init value
     val_log_batch_id = 0
-    first_val = True
     img_h, img_w = cfg.DATASET.OUTPUT_SIZE
     for epoch in range(cfg.TRAIN.BEGIN_EPOCH, cfg.TRAIN.END_EPOCH):
         for view_trgt in view_dataloader:
@@ -297,7 +273,7 @@ def main():
 
             # sample texture
             # neural_img = texture_mapper(uv_map, sh_basis_map)
-            neural_img = texture_mapper(uv_map, neural_tex)
+            neural_img = texture_mapper(uv_map = uv_map, neural_tex = neural_tex)
 
             # rendering net
             outputs = render_net(neural_img, None)
@@ -342,7 +318,15 @@ def main():
             writer.add_scalar("final_psnr_valid", err_metrics_batch_i['psnr_valid_mean'], iter)
 
             end = time.time()
-            print("Iter %07d   Epoch %03d   loss_g %0.4f   mae_valid %0.4f   psnr_valid %0.4f   t_total %0.4f" % (iter, epoch, loss_g, err_metrics_batch_i['mae_valid_mean'], err_metrics_batch_i['psnr_valid_mean'], end - start))
+            log_time = datetime.datetime.now().strftime('%m/%d') + '_' + datetime.datetime.now().strftime('%H:%M:%S') 
+            print("%s Iter %07d   Epoch %03d   loss_g %0.4f   mae_valid %0.4f   psnr_valid %0.4f   t_total %0.4f" 
+                  % (log_time,
+                     iter,
+                     epoch,
+                     loss_g, 
+                     err_metrics_batch_i['mae_valid_mean'], 
+                     err_metrics_batch_i['psnr_valid_mean'], 
+                     end - start))
 
             # tensorboard figure logs of training data
             if not iter % cfg.LOG.PRINT_FREQ:
@@ -351,8 +335,15 @@ def main():
                     output_final_vs_gt.append(outputs[i].clamp(min = 0., max = 1.))
                     output_final_vs_gt.append(img_gt[i].clamp(min = 0., max = 1.))
                     output_final_vs_gt.append((outputs[i] - img_gt[i]).abs().clamp(min = 0., max = 1.))
-
                 output_final_vs_gt = torch.cat(output_final_vs_gt, dim = 0)
+                writer.add_image("output_final_vs_gt",
+                                torchvision.utils.make_grid(output_final_vs_gt,
+                                                            nrow = outputs[0].shape[0], # 3 
+                                                            range = (0, 1),
+                                                            scale_each = False,
+                                                            normalize = False).cpu().detach().numpy(),
+                                                            iter)
+
                 raster_uv_maps = torch.cat((uv_map.permute(0,3,1,2),  # N H W 2 -> N 2 H W
                                     torch.zeros(uv_map.shape[0], 1, img_h, img_w, dtype=uv_map.dtype, device=uv_map.device)),
                                     dim = 1)
@@ -363,12 +354,16 @@ def main():
                                                             scale_each = False,
                                                             normalize = False).cpu().detach().numpy()[::-1, :, :], # uv0 -> 0vu (rgb)
                                                             iter)
-                writer.add_image("output_final_vs_gt",
-                                torchvision.utils.make_grid(output_final_vs_gt,
-                                                            nrow = outputs[0].shape[0], # 3 
+
+                atlas = torch.cat((texture_mapper_module.textures[0].clone().detach().cpu().permute(0,3,1,2)[:, 0:3, :, :],
+                                    orig_tex.clone().detach().cpu().permute(0,3,1,2)),
+                                    dim = 0)
+                writer.add_image("atlas_vis",
+                                torchvision.utils.make_grid(atlas,
+                                                            nrow = raster_uv_maps[0].shape[0],
                                                             range = (0, 1),
                                                             scale_each = False,
-                                                            normalize = False).cpu().detach().numpy(),
+                                                            normalize = False).cpu().detach().numpy()[:, :, :],
                                                             iter)
             # validation
             if cfg.TRAIN.VAL_FREQ > 0:
@@ -474,20 +469,20 @@ def main():
                                         err_metrics_val[key].append(err_metrics_batch_i_final[key][i])
 
                             # save images
-                            for i in range(batch_size):
-                                cv2.imwrite(os.path.join(val_out_dir, str(iter).zfill(8) + '_' + str(
-                                    view_idx[i].cpu().detach().numpy()).zfill(5) + '.png'),
-                                            outputs[0][i, :].permute((1, 2, 0)).cpu().detach().numpy()[:, :,
-                                            ::-1] * 255.)
-                                cv2.imwrite(os.path.join(val_err_dir, str(iter).zfill(8) + '_' + str(
-                                    view_idx[i].cpu().detach().numpy()).zfill(5) + '.png'),
-                                            (outputs[0] - img_gt[0]).abs().clamp(min=0., max=1.)[i, :].permute(
-                                                (1, 2, 0)).cpu().detach().numpy()[:, :, ::-1] * 255.)
-                                if first_val:
-                                    cv2.imwrite(os.path.join(val_gt_dir,
-                                                            str(view_idx[i].cpu().detach().numpy()).zfill(5) + '.png'),
-                                                img_gt[0][i, :].permute((1, 2, 0)).cpu().detach().numpy()[:, :,
-                                                ::-1] * 255.)
+                            # for i in range(batch_size):
+                            #     cv2.imwrite(os.path.join(val_out_dir, str(iter).zfill(8) + '_' + str(
+                            #         view_idx[i].cpu().detach().numpy()).zfill(5) + '.png'),
+                            #                 outputs[0][i, :].permute((1, 2, 0)).cpu().detach().numpy()[:, :,
+                            #                 ::-1] * 255.)
+                            #     cv2.imwrite(os.path.join(val_err_dir, str(iter).zfill(8) + '_' + str(
+                            #         view_idx[i].cpu().detach().numpy()).zfill(5) + '.png'),
+                            #                 (outputs[0] - img_gt[0]).abs().clamp(min=0., max=1.)[i, :].permute(
+                            #                     (1, 2, 0)).cpu().detach().numpy()[:, :, ::-1] * 255.)
+                            #     if first_val:
+                            #         cv2.imwrite(os.path.join(val_gt_dir,
+                            #                                 str(view_idx[i].cpu().detach().numpy()).zfill(5) + '.png'),
+                            #                     img_gt[0][i, :].permute((1, 2, 0)).cpu().detach().numpy()[:, :,
+                            #                     ::-1] * 255.)
 
                             end_val_i = time.time()
                             print("Val   batch %03d   mae_valid %0.4f   psnr_valid %0.4f   ssim_valid %0.4f   t_total %0.4f" % (

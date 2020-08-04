@@ -45,6 +45,7 @@ class ViewDataset():
         self.cam_idxs = []
         self.frame_idxs = []
         self.frame_num = len(self.cam_range) & len(self.frame_range)
+        self.objs = {}
 
         self.views_all = []
         if not os.path.isdir(root_dir):
@@ -124,28 +125,10 @@ class ViewDataset():
         #     self.img_fn2idx[img_fn] = idx
         #     self.img_idx2fn.append(img_fn)
 
-        print("*" * 100)
         print("Sampling pattern ", sampling_pattern)
         print("Image size ", self.img_size)
-        print("*" * 100)
 
-        print(" Buffering meshs...")
-        # if preset_uv_path:
-        #    self.v_attr, self.f_attr = nr.load_obj(cur_obj_fp, normalization = False)
-        self.objs = {}
-        if cfg.DATASET.PRELOAD_MESHS:
-            for keep_idx in self.keep_idxs:
-                frame_idx = self.frame_idxs[keep_idx]
-                if frame_idx in self.objs:
-                    continue
-                cur_obj_fp = cfg.DATASET.MESH_DIR%(frame_idx)
-                obj_data = {}
-                obj_data['v_attr'] , obj_data['f_attr'] = nr.load_obj(cur_obj_fp, normalization = False, use_cuda = False)
-                self.objs[frame_idx] = obj_data
-                if cfg.VERBOSE:
-                    print(' Loading mesh: ' + str(frame_idx) + ' ' + cur_obj_fp)
-
-        print(" building transform for images...")
+        print(" Building transform for images...")
         self.transform = RandomTransform(cfg.DATASET.OUTPUT_SIZE, 
                                     cfg.DATASET.MAX_SHIFT, 
                                     cfg.DATASET.MAX_SCALE,
@@ -155,15 +138,34 @@ class ViewDataset():
             print(self.cam_idxs)
             print(self.img_fp_all)
             print(self.frame_idxs)        
+    
 
     def buffer_all(self):
-        # Buffer files
-        print("Buffering files...")
-        self.views_all = []
-        for i in range(self.__len__()):
-            if not i % 50:
-                print('Data', i)
-            self.views_all.append(self.read_view(i))
+        # if preset_uv_path:
+        #    self.v_attr, self.f_attr = nr.load_obj(cur_obj_fp, normalization = False)
+
+        if self.cfg.DATASET.PRELOAD_MESHS:
+            print(" Buffering meshs...")
+            self.objs = {}            
+            for keep_idx in self.keep_idxs:
+                frame_idx = self.frame_idxs[keep_idx]
+                if frame_idx in self.objs:
+                    continue
+                cur_obj_fp = self.cfg.DATASET.MESH_DIR%(frame_idx)
+                obj_data = {}
+                obj_data['v_attr'] , obj_data['f_attr'] = nr.load_obj(cur_obj_fp, normalization = False, use_cuda = False)
+                self.objs[frame_idx] = obj_data
+                if self.cfg.VERBOSE:
+                    print(' Loading mesh: ' + str(frame_idx) + ' ' + cur_obj_fp)
+
+        if self.cfg.DATASET.PRELOAD_VIEWS:
+            # Buffer files
+            print("Buffering files...")
+            self.views_all = []
+            for i in range(self.__len__()):
+                if not i % 50:
+                    print('Data', i)
+                self.views_all.append(self.read_view(i))
 
     def buffer_one(self):
         self.views_all = []

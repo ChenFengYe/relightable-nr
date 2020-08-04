@@ -13,8 +13,6 @@ from collections import OrderedDict
 import _init_paths
 
 from dataset import dataio
-from dataset import data_util
-from utils import util
 
 from models import network
 
@@ -69,6 +67,16 @@ def main():
     # device = torch.device('cuda:'+ str(cfg.GPUS))
 
     print('Build Network...')
+    # texture creater
+    texture_creater = network.TextureCreater(texture_size = cfg.MODEL.TEX_CREATER.NUM_SIZE,
+                                            texture_num_ch = cfg.MODEL.TEX_CREATER.NUM_CHANNELS)
+    # render net
+    # feature_net = network.FeatureNet(nf0 = cfg.MODEL.FEATURE_NET.NF0,
+    #                             in_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS + cfg.MODEL.TEX_CREATER.NUM_CHANNELS,
+    #                             out_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
+    #                             num_down_unet = 3,
+    #                             use_gcn = False)
+
     # texture mapper
     texture_mapper = network.TextureMapper(texture_size = cfg.MODEL.TEX_MAPPER.NUM_SIZE,
                                             texture_num_ch = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
@@ -83,7 +91,7 @@ def main():
                                     num_down_unet = 5,
                                     use_gcn = False)
     # interpolater
-    interpolater = network.Interpolater()
+    # interpolater = network.Interpolater()
     # Rasterizer
     cur_obj_path = ''
     if not cfg.DATASET.LOAD_PRECOMPUTE:
@@ -105,8 +113,9 @@ def main():
 
     # move to device
     texture_mapper.to(device)
+    # feature_net.to(device)    
     render_net.to(device)
-    interpolater.to(device)
+    #interpolater.to(device)
     rasterizer.to(device)
 
     # use multi-GPU
@@ -122,7 +131,8 @@ def main():
 
     texture_mapper.train()
     render_net.train()
-    interpolater.train()
+    # feature_net.train()
+    #interpolater.train()
     rasterizer.train()
 
     # # fix test 
@@ -136,12 +146,11 @@ def main():
     log_dir = os.path.join(cfg.TEST.MODEL_DIR, cfg.TEST.CALIB_NAME[:-4], 'resol_' + str(cfg.DATASET.OUTPUT_SIZE[0]), log_dir[-2],
                            log_dir[-1].split('_')[0] + '_' + log_dir[-1].split('_')[1] + '_' +
                            cfg.TEST.MODEL_NAME.split('-')[-1].split('.')[0])
-    data_util.cond_mkdir(log_dir)
-    save_dir_img_est = os.path.join(log_dir, cfg.TEST.SAVE_FOLDER)
-    data_util.cond_mkdir(save_dir_img_est)
-    save_dir_sh_basis_map = os.path.join(cfg.TEST.CALIB_DIR, 'resol_' + str(cfg.DATASET.OUTPUT_SIZE[0]), 'precomp', 'sh_basis_map')
-    data_util.cond_mkdir(save_dir_sh_basis_map)
-    util.custom_copy(args.cfg, os.path.join(log_dir, cfg.LOG.CFG_NAME))    
+    util.cond_mkdir(log_dir)
+    save_dir_img = os.path.join(log_dir, 
+                                    cfg.TEST.SAVE_FOLDER, 
+                                    str(cfg.TEST.FRAME_RANGE[0]) + str(cfg.TEST.FRAME_RANGE[1]))
+    util.cond_mkdir(save_dir_img)
     
     print('Begin inference...')
     inter = 0
@@ -213,13 +222,13 @@ def main():
 
             # save
             for batch_idx in range(0, outputs.shape[0]):
-                cv2.imwrite(os.path.join(save_dir_img_est, str(inter).zfill(5) + '.png'), outputs[batch_idx, :].permute((1, 2, 0)).cpu().detach().numpy()[:, :, ::-1] * 255.)
+                cv2.imwrite(os.path.join(save_dir_img, str(inter).zfill(5) + '.png'), outputs[batch_idx, :].permute((1, 2, 0)).cpu().detach().numpy()[:, :, ::-1] * 255.)
                 inter = inter + 1
 
             end = time.time()
             print("View %07d   t_total %0.4f" % (inter, end - start))
     
-    util.make_gif(save_dir_img_est, save_dir_img_est+'.gif')    
+    util.make_gif(save_dir_img, save_dir_img+'.gif')    
 
 if __name__ == '__main__':
     main()

@@ -347,7 +347,8 @@ class RenderingNet(nn.Module):
                  use_dropout = True,
                  dropout_prob = 0.1,
                  nf0 = nf0,
-                 norm = nn.BatchNorm2d,
+                 norm = nn.InstanceNorm2d,
+                 # norm = nn.BatchNorm2d, chenxin 200803 temporary change for debug
                  max_channels = 8 * nf0,
                  num_down = num_down_unet,
                  out_channels_gcn = out_channels_gcn,
@@ -383,7 +384,8 @@ class FeatureNet(nn.Module):
                  use_dropout = True,
                  dropout_prob = 0.1,
                  nf0 = nf0,
-                 norm = nn.BatchNorm2d,
+                 norm = nn.InstanceNorm2d,
+                 # norm = nn.BatchNorm2d, # chenxin 200803  temporaray for debug
                  max_channels = 8 * nf0,
                  num_down = num_down_unet,
                  out_channels_gcn = out_channels_gcn,
