@@ -7,12 +7,12 @@ from PIL import Image
 import cv2
 import scipy.io
 
-from dataset import data_util
-from dataset.transform import RandomTransform
+from dataset.data_util_dome.data_util import samping_img_set, glob_imgs, load_img
+from dataset.data_util_dome.transform import RandomTransform
 
 import neural_renderer as nr
 
-class ViewDataset():
+class DomeViewDataset():
     def __init__(self,
                  cfg,
                  root_dir,
@@ -106,7 +106,7 @@ class ViewDataset():
         self.img_fp_all = img_fp_all_new
 
         # Subsample data
-        self.img_fp_all, self.poses_all, self.keep_idxs = data_util.samping_img_set(self.img_fp_all, self.poses_all, sampling_pattern)
+        self.img_fp_all, self.poses_all, self.keep_idxs = samping_img_set(self.img_fp_all, self.poses_all, sampling_pattern)
         self.cam_idxs = np.array(self.cam_idxs)
         
         if self.calib_format == 'convert':
@@ -190,7 +190,7 @@ class ViewDataset():
 
         # get view image
         if self.is_train:
-            # img_gt, center_coord, center_coord_new, img_crop_size = data_util.load_img(img_fp, square_crop = True, downsampling_order = 1, target_size = self.img_size)
+            # img_gt, center_coord, center_coord_new, img_crop_size = load_img(img_fp, square_crop = True, downsampling_order = 1, target_size = self.img_size)
             # img_gt = img_gt[:, :, :3]
             # img_gt = img_gt.transpose(2,0,1)
             # img_gt = img_gt ** self.img_gamma
@@ -201,7 +201,7 @@ class ViewDataset():
             # if self.cfg.DEBUG.DEBUG:
             #     mask_fp = os.path.join(os.path.dirname(img_fp), 'mask/', os.path.basename(img_fp))
             #     print(mask_fp)
-            #     mask_orig, center_coord, center_coord_new, img_crop_size = data_util.load_img(mask_fp, square_crop = True, downsampling_order = 1, target_size = self.img_size)
+            #     mask_orig, center_coord, center_coord_new, img_crop_size = load_img(mask_fp, square_crop = True, downsampling_order = 1, target_size = self.img_size)
             #     mask_orig = mask_orig[:,:,None]
         else:
             min_dim = np.amin(img_hw)
@@ -241,40 +241,40 @@ class ViewDataset():
                 'obj_path': obj_path}
 
         if self.is_train:
-                view['img_gt'] = img_gt
+                view['img'] = img_gt
                 view['ROI'] = ROI
 
-        # load precomputed data
-        if self.cfg.DATASET.LOAD_PRECOMPUTE:
-            precomp_low_dir = self.precomp_low_dir % frame_idx
-            precomp_high_dir = self.precomp_high_dir % frame_idx
+            # load precomputed data
+            # if self.cfg.DATASET.LOAD_PRECOMPUTE:
+            #     precomp_low_dir = self.precomp_low_dir % frame_idx
+            #     precomp_high_dir = self.precomp_high_dir % frame_idx
 
-            # cannot share across meshes
-            raster = scipy.io.loadmat(os.path.join(precomp_low_dir, 'resol_' + str(self.img_size[0]), 'raster', img_fn.split('.')[0] + '.mat'))
-            view['face_index_map'] = torch.from_numpy(raster['face_index_map'])
-            view['weight_map'] = torch.from_numpy(raster['weight_map'])
-            view['faces_v_idx'] = torch.from_numpy(raster['faces_v_idx'])
-            view['v_uvz'] = torch.from_numpy(raster['v_uvz'])
-            view['v_front_mask'] = torch.from_numpy(raster['v_front_mask'])[0, :]
+            #     # cannot share across meshes
+            #     raster = scipy.io.loadmat(os.path.join(precomp_low_dir, 'resol_' + str(self.img_size[0]), 'raster', img_fn.split('.')[0] + '.mat'))
+            #     view['face_index_map'] = torch.from_numpy(raster['face_index_map'])
+            #     view['weight_map'] = torch.from_numpy(raster['weight_map'])
+            #     view['faces_v_idx'] = torch.from_numpy(raster['faces_v_idx'])
+            #     view['v_uvz'] = torch.from_numpy(raster['v_uvz'])
+            #     view['v_front_mask'] = torch.from_numpy(raster['v_front_mask'])[0, :]
 
-            # can share across meshes when only changing resolution
-            TBN_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'TBN_map', img_fn.split('.')[0] + '.mat'))['TBN_map']
-            view['TBN_map'] = torch.from_numpy(TBN_map)
-            uv_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'uv_map', img_fn.split('.')[0] + '.mat'))['uv_map']
-            uv_map = uv_map - np.floor(uv_map) # keep uv in [0, 1] ?? question ?? why to - np.floor
-            view['uv_map'] = torch.from_numpy(uv_map)
-            normal_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'normal_map', img_fn.split('.')[0] + '.mat'))['normal_map']
-            view['normal_map'] = torch.from_numpy(normal_map)
-            view_dir_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'view_dir_map', img_fn.split('.')[0] + '.mat'))['view_dir_map']
-            view['view_dir_map'] = torch.from_numpy(view_dir_map)
-            view_dir_map_tangent = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'view_dir_map_tangent', img_fn.split('.')[0] + '.mat'))['view_dir_map_tangent']
-            view['view_dir_map_tangent'] = torch.from_numpy(view_dir_map_tangent)
-            sh_basis_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'sh_basis_map', img_fn.split('.')[0] + '.mat'))['sh_basis_map'].astype(np.float32)
-            view['sh_basis_map'] = torch.from_numpy(sh_basis_map)
-            reflect_dir_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'reflect_dir_map', img_fn.split('.')[0] + '.mat'))['reflect_dir_map']
-            view['reflect_dir_map'] = torch.from_numpy(reflect_dir_map)
-            alpha_map = cv2.imread(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'alpha_map', img_fn.split('.')[0] + '.png'), cv2.IMREAD_UNCHANGED).astype(np.float32) / 255.0
-            view['alpha_map'] = torch.from_numpy(alpha_map)
+            #     # can share across meshes when only changing resolution
+            #     TBN_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'TBN_map', img_fn.split('.')[0] + '.mat'))['TBN_map']
+            #     view['TBN_map'] = torch.from_numpy(TBN_map)
+            #     uv_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'uv_map', img_fn.split('.')[0] + '.mat'))['uv_map']
+            #     uv_map = uv_map - np.floor(uv_map) # keep uv in [0, 1] ?? question ?? why to - np.floor
+            #     view['uv_map'] = torch.from_numpy(uv_map)
+            #     normal_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'normal_map', img_fn.split('.')[0] + '.mat'))['normal_map']
+            #     view['normal_map'] = torch.from_numpy(normal_map)
+            #     view_dir_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'view_dir_map', img_fn.split('.')[0] + '.mat'))['view_dir_map']
+            #     view['view_dir_map'] = torch.from_numpy(view_dir_map)
+            #     view_dir_map_tangent = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'view_dir_map_tangent', img_fn.split('.')[0] + '.mat'))['view_dir_map_tangent']
+            #     view['view_dir_map_tangent'] = torch.from_numpy(view_dir_map_tangent)
+            #     sh_basis_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'sh_basis_map', img_fn.split('.')[0] + '.mat'))['sh_basis_map'].astype(np.float32)
+            #     view['sh_basis_map'] = torch.from_numpy(sh_basis_map)
+            #     reflect_dir_map = scipy.io.loadmat(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'reflect_dir_map', img_fn.split('.')[0] + '.mat'))['reflect_dir_map']
+            #     view['reflect_dir_map'] = torch.from_numpy(reflect_dir_map)
+            #     alpha_map = cv2.imread(os.path.join(precomp_high_dir, 'resol_' + str(self.img_size[0]), 'alpha_map', img_fn.split('.')[0] + '.png'), cv2.IMREAD_UNCHANGED).astype(np.float32) / 255.0
+            #     view['alpha_map'] = torch.from_numpy(alpha_map)
 
             # print('----------------------')
             # print(idx)
@@ -284,14 +284,14 @@ class ViewDataset():
 
             # Data checker -  For debugging
             # image size
-            # if view['img_gt'].shape[1:2] != view['uv_map'].shape[0:1]:
-            #     print(view['img_gt'].shape)
+            # if view['img'].shape[1:2] != view['uv_map'].shape[0:1]:
+            #     print(view['img'].shape)
             #     print(view['uv_map'].shape)
             #     raise ValueError("Image and uv map have different size!")
 
-            # print(type((view['img_gt'] * (1 - view['alpha_map']))))
+            # print(type((view['img'] * (1 - view['alpha_map']))))
             # cv2.imread('/data/chenxin/relightable-nr/tmp/'+)
-            # if not (view['img_gt'] * (1 - view['alpha_map'])).type(torch.uint8).any():
+            # if not (view['img'] * (1 - view['alpha_map'])).type(torch.uint8).any():
             #     raise ValueError("Alpha map not correct!")
             # if not (view['uv_map'] * (1-view['alpha_map'])).any():
             #     print(alpha_map_fp)
@@ -307,63 +307,15 @@ class ViewDataset():
         return len(self.img_fp_all)
 
     def __getitem__(self, idx):
-        view_trgt = []
+        # view_trgt = []
 
         # to-do fix first frame error
         if len(self.views_all) > idx:
-            view_trgt.append(self.views_all[idx])
+            view_trgt = self.views_all[idx]
+            # view_trgt.append(self.views_all[idx])
         else:
-            view_trgt.append(self.read_view(idx))
+            view_trgt = self.read_view(idx)
+            # view_trgt.append(self.read_view(idx))
             
         return view_trgt
-
-
-class LightProbeDataset():
-    def __init__(self,
-                 data_dir,
-                 img_gamma = 1.0):
-        super().__init__()
-
-        self.data_dir = data_dir
-        self.img_gamma = img_gamma
-
-        if not os.path.isdir(data_dir):
-            raise ValueError("Error! data dir is wrong")
-
-        # get path for all light probes
-        self.lp_fp_all = sorted(data_util.glob_imgs(self.data_dir))
-
-        self.lp_all = [None] * len(self.lp_fp_all)
-
-
-    def buffer_one(self, idx):
-        if self.lp_all[idx] is not None:
-            return
-            
-        # get light probe
-        lp_fp = self.lp_fp_all[idx]
-        print(lp_fp)
-        if lp_fp[-4:] == '.exr' or lp_fp[-4:] == '.hdr':
-            lp_img = cv2.imread(lp_fp, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
-        else:
-            lp_img = cv2.imread(lp_fp, cv2.IMREAD_UNCHANGED)[:, :, :3].astype(np.float32) / 255.0
-        lp_img = cv2.cvtColor(lp_img, cv2.COLOR_BGR2RGB).transpose(2,0,1)
-        lp_img = lp_img ** self.img_gamma
-
-        lp = {'lp_img': torch.from_numpy(lp_img)}
-
-        self.lp_all[idx] = lp
-
-
-    def buffer_all(self):
-        for idx in range(len(self.lp_fp_all)):
-            self.buffer_one(idx)
-
-
-    def __len__(self):
-        return len(self.lp_fp_all)
-
-
-    def __getitem__(self, idx):
-        self.buffer_one(idx)
-        return self.lp_all[idx]
+        

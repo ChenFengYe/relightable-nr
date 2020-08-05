@@ -33,7 +33,6 @@ DATASET:
   UV_PATH: ''
   MESH_DIR: '_/mesh_smpl2pifu_uv/aligned_%03d_017_512.obj'
   PRELOAD_MESHS: True
-  LOAD_PRECOMPUTE: False
 
   # relight
   LIGHTING_IDX: 0
@@ -52,7 +51,7 @@ MODEL:
     MIPMAP_LEVEL: 1
     SH_BASIS: False
     NUM_PARAMS: -1
-  RENDER_NET:
+  RENDER_MODULE:
     NF0: 64
     OUTPUT_CHANNELS: 3
     NUM_PARAMS: -1

@@ -11,7 +11,7 @@ from yacs.config import CfgNode as CN
 
 _C = CN()
 _C.AUTO_RESUME = True
-_C.GPUS = (0,)
+_C.GPUS = 0,
 _C.WORKERS = 8
 _C.RANK = 0
 _C.VERBOSE = True
@@ -42,7 +42,6 @@ _C.DATASET.CAM_MODE = 'projection' # projection or orthogonal
 # 3D computing
 _C.DATASET.PRELOAD_MESHS = False
 _C.DATASET.PRELOAD_VIEWS = False
-_C.DATASET.LOAD_PRECOMPUTE = True
 _C.DATASET.TEX_PATH = ''
 _C.DATASET.UV_PATH = ''                 # Preset uv for all frame
 
@@ -53,9 +52,17 @@ _C.DATASET.MAX_SHIFT = 0
 _C.DATASET.MAX_ROTATION = 0
 _C.DATASET.MAX_SCALE = 1.0
 _C.DATASET.FLIP = 0.5
-# train test split
-_C.DATASET.TEST_SET = ''
-_C.DATASET.TRAIN_SET = ''
+
+# dataset transform parameters for densepose dataset
+_C.DATASET.PREPROCESS_MODE = '' # to-do
+_C.DATASET.CROP_SIZE = 512      # merge with _C.DATASET.OUTPUT_SIZE
+_C.DATASET.LOAD_SIZE = 512      # merge with _C.DATASET.OUTPUT_SIZE
+_C.DATASET.ASPECT_RATIO = 1.0   # merge with _C.DATASET.MAX_SCALE
+_C.DATASET.NO_FLIP = True       # merge with _C.DATASET.FLIP
+
+# # train test split
+# _C.DATASET.TEST_SET = ''
+# _C.DATASET.TRAIN_SET = ''
 
 # common params for NETWORK
 _C.MODEL = CN()
@@ -72,15 +79,15 @@ _C.MODEL.TEX_MAPPER.MIPMAP_LEVEL = 4    # Mipmap levels for neural texture
 _C.MODEL.TEX_MAPPER.SH_BASIS = True     # Whether apply spherical harmonics to sampled feature maps
 _C.MODEL.TEX_MAPPER.MERGE_TEX = True     # Whether merge texture different training
 _C.MODEL.TEX_MAPPER.NUM_PARAMS = -1
-_C.MODEL.FEATURE_NET = CN()
-_C.MODEL.FEATURE_NET.NF0 = 64            # Number of features in outermost layer of U-Net architectures
-_C.MODEL.FEATURE_NET.NUM_DOWN = 5
-_C.MODEL.FEATURE_NET.NUM_PARAMS = -1
-_C.MODEL.RENDER_NET = CN()
-_C.MODEL.RENDER_NET.NF0 = 64            # Number of features in outermost layer of U-Net architectures
-_C.MODEL.RENDER_NET.NUM_DOWN = 5
-_C.MODEL.RENDER_NET.OUTPUT_CHANNELS =3
-_C.MODEL.RENDER_NET.NUM_PARAMS = -1
+_C.MODEL.FEATURE_MODULE = CN()
+_C.MODEL.FEATURE_MODULE.NF0 = 64            # Number of features in outermost layer of U-Net architectures
+_C.MODEL.FEATURE_MODULE.NUM_DOWN = 5
+_C.MODEL.FEATURE_MODULE.NUM_PARAMS = -1
+_C.MODEL.RENDER_MODULE = CN()
+_C.MODEL.RENDER_MODULE.NF0 = 64            # Number of features in outermost layer of U-Net architectures
+_C.MODEL.RENDER_MODULE.NUM_DOWN = 5
+_C.MODEL.RENDER_MODULE.OUTPUT_CHANNELS =3
+_C.MODEL.RENDER_MODULE.NUM_PARAMS = -1
 
 _C.TRAIN = CN()
 _C.TRAIN.EXP_NAME = 'example'
@@ -112,8 +119,7 @@ _C.TEST.CALIB_PATH = '_/test_calib/calib.mat'
 _C.TEST.CALIB_DIR = ''
 _C.TEST.CALIB_NAME = ''
 _C.TEST.SAMPLING_PATTERN = 'all'            # Sampling of image testing sequences
-_C.TEST.FORCE_RECOMPUTE = True  
-_C.TEST.MODEL_PATH = 'models/dataset_name/net_name/date_net_params.pth'    # Path to a checkpoint to load render_net weights from
+_C.TEST.MODEL_PATH = 'models/dataset_name/net_name/date_net_params.pth'    # Path to a checkpoint to load render_module weights from
 _C.TEST.MODEL_DIR = ''
 _C.TEST.MODEL_NAME = ''
 _C.TEST.SAVE_FOLDER = 'img_test'            # Save folder for test imgs

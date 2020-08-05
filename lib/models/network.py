@@ -14,7 +14,7 @@ from utils import sph_harm
 from utils import misc
 from utils import render
 from utils import camera
-from dataset import data_util
+from utils.util import euler_to_rot
 
 class TextureCreater(nn.Module):
     def __init__(self,
@@ -180,21 +180,25 @@ class TextureMapper(nn.Module):
 class Rasterizer(nn.Module):
     def __init__(self,
                 cfg, 
-                obj_fp, 
-                img_size,
-                camera_mode = 'projection',
+                obj_fp = None, 
                 obj_data = None,
                 preset_uv_path = None,
                 global_RT = None):
 
         super(Rasterizer, self).__init__()
 
+        img_size = cfg.DATASET.OUTPUT_SIZE[0],
+        camera_mode = cfg.DATASET.CAM_MODE,
+
         # load obj
         #v_attr, f_attr = []
         if obj_data != None:
             v_attr, f_attr = obj_data['v_attr'] , obj_data['f_attr']
-        else:
+        elif obj_fp != None:
             v_attr, f_attr = nr.load_obj(obj_fp, normalization = False)           
+        else:
+            raise ValueError('Not input obj data!')
+
         if preset_uv_path != None:
             ref_v_attr, ref_f_attr = nr.load_obj(preset_uv_path, normalization = False)
             if v_attr['v'].shape[0] != ref_v_attr['v'].shape[0]:
@@ -324,7 +328,7 @@ class Rasterizer(nn.Module):
         return uv_map, alpha, face_index_map, weight_map, faces_v_idx, normal_map, normal_map_cam, faces_v, faces_vt, position_map, position_map_cam, depth, v_uvz, v_front_mask
 
 
-class RenderingNet(nn.Module):
+class RenderingModule(nn.Module):
     def __init__(self,
                  nf0,
                  in_channels,
@@ -361,7 +365,7 @@ class RenderingNet(nn.Module):
         x = self.net(input, v_fea)
         return self.tanh(x)
 
-class FeatureNet(nn.Module):
+class FeatureModule(nn.Module):
     def __init__(self,
                  nf0,
                  in_channels,
@@ -593,7 +597,7 @@ class RaySampler(nn.Module):
         Rs = np.zeros((self.num_ray, 3, 3), dtype = np.float32)
         Rs[0, :, :] = np.eye(3)
         for i in range(self.num_ray - 1):
-            Rs[i + 1, :, :] = data_util.euler_to_rot(self.rot_rad[:, i])
+            Rs[i + 1, :, :] = euler_to_rot(self.rot_rad[:, i])
         self.register_buffer('Rs', torch.from_numpy(Rs)) # [num_ray, 3, 3]
         
         # pivots in tangent space
@@ -855,3 +859,4 @@ class LightingLP(nn.Module):
         sh_coeff = sph_harm.fit_sh_coeff(samples = self.l_samples.to(self.l_dir.device), sh_basis_val = basis_val) # [num_lighting, num_basis, num_channel]
         self.register_buffer('sh_coeff', sh_coeff)
         return
+        

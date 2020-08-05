@@ -61,7 +61,7 @@ def main():
     view_dataloader = DataLoader(view_dataset, batch_size = cfg.TEST.BATCH_SIZE, shuffle = False, num_workers = 8)
 
     print('Set device...')
-    # model = torch.nn.DataParallel(model, device_ids=cfg.GPUS).cuda()
+    # model = DataParallelModel(model, device_ids=cfg.GPUS).cuda()
     # CUDA_VISIBLE_DEVICES = 2
     # os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.GPUS)
     device = torch.device('cuda')
@@ -75,51 +75,50 @@ def main():
                                             texture_init = None,
                                             fix_texture = True,
                                             apply_sh = cfg.MODEL.TEX_MAPPER.SH_BASIS)
-    # rendering net
-    render_net = network.RenderingNet(nf0 = cfg.MODEL.RENDER_NET.NF0,
+    # rendering module
+    render_module = network.RenderingModule(nf0 = cfg.MODEL.RENDER_MODULE.NF0,
                                     in_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
-                                    out_channels = cfg.MODEL.RENDER_NET.OUTPUT_CHANNELS,
+                                    out_channels = cfg.MODEL.RENDER_MODULE.OUTPUT_CHANNELS,
                                     num_down_unet = 5,
                                     use_gcn = False)
     # interpolater
     interpolater = network.Interpolater()
     # # Rasterizer
     # cur_obj_path = ''
-    # if not cfg.DATASET.LOAD_PRECOMPUTE:
-    #     view_data = view_dataset.read_view(0)
-    #     cur_obj_path = view_data['obj_path']
-    #     frame_idx = view_data['f_idx']
-    #     obj_data = view_dataset.objs[frame_idx]
-    #     rasterizer = network.Rasterizer(cfg,
-    #                         obj_fp = cur_obj_path, 
-    #                         img_size = cfg.DATASET.OUTPUT_SIZE[0],
-    #                         obj_data = obj_data,
-    #                         # preset_uv_path = cfg.DATASET.UV_PATH,
-    #                         global_RT = view_dataset.global_RT)
+    # view_data = view_dataset.read_view(0)
+    # cur_obj_path = view_data['obj_path']
+    # frame_idx = view_data['f_idx']
+    # obj_data = view_dataset.objs[frame_idx]
+    # rasterizer = network.Rasterizer(cfg,
+    #                     obj_fp = cur_obj_path, 
+    #                     img_size = cfg.DATASET.OUTPUT_SIZE[0],
+    #                     obj_data = obj_data,
+    #                     # preset_uv_path = cfg.DATASET.UV_PATH,
+    #                     global_RT = view_dataset.global_RT)
 
     print('Loading Model...')
     # load checkpoint
-    util.custom_load([texture_mapper, render_net], ['texture_mapper', 'render_net'], cfg.TEST.MODEL_PATH)
+    util.custom_load([texture_mapper, render_module], ['texture_mapper', 'render_module'], cfg.TEST.MODEL_PATH)
 
     # move to device
     texture_mapper.to(device)
-    render_net.to(device)
+    render_module.to(device)
     interpolater.to(device)
     # rasterizer.to(device)
 
     # use multi-GPU
     # if cfg.GPUS != '':
     #     texture_mapper = nn.DataParallel(texture_mapper)
-    #     render_net = nn.DataParallel(render_net)
+    #     render_module = nn.DataParallel(render_module)
 
     # set mode
     # texture_mapper.eval()
-    # render_net.eval()
+    # render_module.eval()
     # interpolater.eval()
     # rasterizer.eval()
 
     texture_mapper.train()
-    render_net.train()
+    render_module.train()
     interpolater.train()
     # rasterizer.train()
 
@@ -183,8 +182,8 @@ def main():
             # sample texture
             neural_img = texture_mapper(uv_map)
 
-            # rendering net
-            outputs = render_net(neural_img, None)
+            # rendering module
+            outputs = render_module(neural_img, None)
             img_max_val = 2.0
             outputs = (outputs * 0.5 + 0.5) * img_max_val # map to [0, img_max_val]
 

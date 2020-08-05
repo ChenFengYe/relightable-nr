@@ -1,24 +1,23 @@
 AUTO_RESUME: True
-GPUS: (2,)
+GPUS: 1,2
 VERBOSE: True
+
 # CUDNN:
 #   BENCHMARK: True
 #   DETERMINISTIC: False
 #   ENABLED: True
 LOG:
-  CFG_NAME: 200729_featureNet_dome_img512_tex512_mipLevel1_lr1e-3.yaml
+  CFG_NAME: 200804_mapper_densepose.yaml
   LOG_DIR: log
-  LOGGING_ROOT: ''
-  PRINT_FREQ: 200
+  PRINT_FREQ: 100
   CHECKPOINT_FREQ: 2000
 DATASET:
-  DATASET: realdome_cx
-  DATASET_TEST: realdome_cx
-  
-  ROOT: 'data/realdome_cx'
-  FRAME_RANGE: [20,150]
-  CAM_RANGE: [17]  # [id] for single cam_id
-  IMG_DIR: '_/rgb0/%d/%03d.png'
+  DATASET: densepose
+
+  ROOT: 'data/densepose_cx'
+  FRAME_RANGE: [-1,-1]
+  CAM_RANGE: [-1]  # [id] for single cam_id
+  IMG_DIR: ''
   GAMMA: 1.0
   OUTPUT_SIZE: [512, 512]
 
@@ -28,10 +27,9 @@ DATASET:
   # 3D data
   TEX_PATH: ''
   UV_PATH: ''
-  MESH_DIR: '_/mesh/%03d.obj'
-  PRELOAD_MESHS: True
+  MESH_DIR: ''
+  PRELOAD_MESHS: False
   PRELOAD_VIEWS: False  
-  LOAD_PRECOMPUTE: False
 
   # relight
   LIGHTING_IDX: 0
@@ -40,25 +38,30 @@ DATASET:
   MAX_ROTATION: 30
   MAX_SCALE: 1.5
   FLIP: 0.5
+  PREPROCESS_MODE: 'scale_shortside_and_crop'
+  LOAD_SIZE: 512
+  CROP_SIZE: 512
+  ASPECT_RATIO: 1.0
+  NO_FLIP: False
 MODEL:
   INIT_WEIGHTS: True
-  NAME: dnr_unet_512_tex512
+  NAME: RenderNet # RenderNet FeatureNet
   PRETRAINED: ''
   TEX_CREATER:
     NUM_CHANNELS: 3
-    NUM_SIZE: 512
-  FEATURE_NET:
+    NUM_SIZE: 2048
+  FEATURE_MODULE:
     NF0: 64
     NUM_DOWN: 5
     NUM_PARAMS: -1
   TEX_MAPPER:
     NUM_CHANNELS: 3
-    NUM_SIZE: 512
+    NUM_SIZE: 2048
     MIPMAP_LEVEL: 1
     SH_BASIS: False
     MERGE_TEX: True
     NUM_PARAMS: -1
-  RENDER_NET:
+  RENDER_MODULE:
     NF0: 64
     NUM_DOWN: 5
     OUTPUT_CHANNELS: 3
@@ -72,14 +75,14 @@ MODEL:
 #   WITH_HEATMAPS_LOSS: [True, True]
 #   HEATMAPS_LOSS_FACTOR: [1.0, 1.0]
 TRAIN:
-  EXP_NAME: 'FixLighting'
-  BATCH_SIZE: 2
+  EXP_NAME: 'zhen_baseline_tuning'
+  BATCH_SIZE: 6
   BEGIN_EPOCH: 0
   RESUME: False
   CHECKPOINT: ''
-  END_EPOCH: 10000
+  END_EPOCH: 100000
   GAMMA: 1.0
-  SAMPLING_PATTERN: 'all' # skipinv_10
+  SAMPLING_PATTERN: 'all'
   SAMPLING_PATTERN_VAL: 'skip_10'
   VAL_FREQ: -1
   SHUFFLE: True
@@ -90,13 +93,12 @@ TRAIN:
 #  MOMENTUM: 0.9
 #  WD: 0.0001
 TEST:
-  BATCH_SIZE: 3
-  FRAME_RANGE: [20,150]
-  CALIB_PATH: '_/test_calib_new/calib20200703_mars_test_360.mat'
+  BATCH_SIZE: 2
+  FRAME_RANGE: [-1,-1]
+  CALIB_PATH: '_/test_calib/calib.mat'
   SAMPLING_PATTERN: 'all'
-  FORCE_RECOMPUTE: False
-  MODEL_PATH: './data/realdome_cx/logs/dnr/07-21_01-58-35_skipinv_10_realdome_cx_trainTex' 
-  SAVE_FOLDER: 'img_est_38000_f200'
+  MODEL_PATH: './log/08-02_17-27-44_skipinv_10_chenxin_zhen_try_new/model_epoch_11999_iter_60000_.pth'
+  SAVE_FOLDER: '200803_test_images'
 #  IMAGES_PER_GPU: 1
 #  SCALE_FACTOR: [1]
 DEBUG:

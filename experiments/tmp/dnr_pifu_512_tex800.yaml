@@ -1,24 +1,25 @@
 AUTO_RESUME: True
-GPUS: (1,)
+GPUS: 1
 VERBOSE: True
+
 # CUDNN:
 #   BENCHMARK: True
 #   DETERMINISTIC: False
 #   ENABLED: True
 LOG:
-  CFG_NAME: 200724_tshow_white_tex1024_ch3_mip1.yaml
+  CFG_NAME: dnr_pifu512_tex800.yaml
   LOG_DIR: log
   LOGGING_ROOT: ''
   PRINT_FREQ: 50
   CHECKPOINT_FREQ: 200
 DATASET:
-  DATASET: white_walkshow
-  DATASET_TEST: white_walkshow
+  DATASET: pifhu_dome_cx
+  DATASET_TEST: pifhu_dome_cx
   
-  ROOT: 'data/white_walkshow'
-  FRAME_RANGE: [1,100]
+  ROOT: 'data/pifhu_dome_cx'
+  FRAME_RANGE: [20,80]
   CAM_RANGE: [0]  # [id] for single cam_id
-  IMG_DIR: '_/rgb0_rect/%03d.png'
+  IMG_DIR: '_/rgb0_rect/%03d_017.png'
   GAMMA: 1.0
   OUTPUT_SIZE: [512, 512]
 
@@ -29,28 +30,31 @@ DATASET:
   # 3D data
   TEX_PATH: ''
   UV_PATH: ''
-  MESH_DIR: '_/mesh_smplx2pifu_uv/aligned_%03d_512.obj'
+  MESH_DIR: '_/mesh_fixuv/aligned_%03d_017_512.obj'
   PRELOAD_MESHS: True
-  LOAD_PRECOMPUTE: False
-
+  
   # relight
   LIGHTING_IDX: 0
+
   # autgmentation
-  MAX_SHIFT: 50
-  MAX_ROTATION: 30
+  MAX_SHIFT: 40
+  MAX_ROTATION: 5.0
   MAX_SCALE: 1.5
+  MIN_SCALE: 0.75
+  SCALE_TYPE: 'short'
+  MAX_SHIFT: 40
   FLIP: 0.5
 MODEL:
   INIT_WEIGHTS: True
   NAME: dnr_unet_512_tex800
   PRETRAINED: ''
   TEX_MAPPER:
-    NUM_CHANNELS: 3
+    NUM_CHANNELS: 16
     NUM_SIZE: 800
     MIPMAP_LEVEL: 1
     SH_BASIS: False
     NUM_PARAMS: -1
-  RENDER_NET:
+  RENDER_MODULE:
     NF0: 64
     OUTPUT_CHANNELS: 3
     NUM_PARAMS: -1
@@ -63,17 +67,17 @@ MODEL:
 #   WITH_HEATMAPS_LOSS: [True, True]
 #   HEATMAPS_LOSS_FACTOR: [1.0, 1.0]
 TRAIN:
-  EXP_NAME: 'trainTex'
+  EXP_NAME: 'firstTrain'
   BATCH_SIZE: 2
   BEGIN_EPOCH: 0
   RESUME: False
-  CHECKPOINT: 'data/realdome_cx/logs/dnr/07-22_08-08-18_skipinv_10_realdome_cx_trainTex/model_epoch_631_iter_37200_.pth'
+  CHECKPOINT: ''
   END_EPOCH: 10000
   GAMMA: 1.0
   SAMPLING_PATTERN: 'skipinv_10'
   SAMPLING_PATTERN_VAL: 'skip_10'
-  VAL_FREQ: 100
-  SHUFFLE: True # TO-DO
+  VAL_FREQ: 50
+  SHUFFLE: False # TO-DO
   LR: 0.001
 #  LR_FACTOR: 0.1
 #  LR_STEP: [200, 260]
@@ -82,18 +86,16 @@ TRAIN:
 #  WD: 0.0001
 TEST:
   BATCH_SIZE: 3
-  FRAME_RANGE: [20,150]
-  CALIB_PATH: '_/test_calib_new/calib20200703_mars_test_360.mat'
+  FRAME_RANGE: [20,80]
+  CALIB_PATH: '_/calib20200715_pifu.mat'
   SAMPLING_PATTERN: 'all'
-  FORCE_RECOMPUTE: False
-  MODEL_PATH: './data/realdome_cx/logs/dnr/07-21_01-58-35_skipinv_10_realdome_cx_trainTex' 
-  SAVE_FOLDER: 'img_est_38000_f200'
+  FORCE_RECOMPUTE: True
+  MODEL_PATH: '' 
+  SAVE_FOLDER: 'img_est'
 #  IMAGES_PER_GPU: 1
 #  SCALE_FACTOR: [1]
 DEBUG:
   DEBUG: False
-  SAVE_TRANSFORMED_IMG: False
-  SAVE_TRANSFORMED_MASK: False
   SAVE_NEURAL_TEX: False
 #   SAVE_BATCH_IMAGES_GT: False
 #   SAVE_BATCH_IMAGES_PRED: False

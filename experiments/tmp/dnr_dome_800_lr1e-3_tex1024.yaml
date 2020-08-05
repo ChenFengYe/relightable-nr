@@ -2,23 +2,29 @@ AUTO_RESUME: True
 GPUS: 0
 VERBOSE: True
 
+# CUDNN:
+#   BENCHMARK: True
+#   DETERMINISTIC: False
+#   ENABLED: True
 LOG:
   CFG_NAME: dnr_dome_img800_tex800_mipLevel2_lr1e-3.yaml
   LOG_DIR: log
   LOGGING_ROOT: ''
-  PRINT_FREQ: 100
-  CHECKPOINT_FREQ: 100
+  PRINT_FREQ: 50
+  CHECKPOINT_FREQ: 200
 DATASET:
   DATASET: realdome_cx
   DATASET_TEST: realdome_cx
   
   ROOT: 'data/realdome_cx'
-  FRAME_RANGE: [20,150]
+  # FRAME_RANGE: [21]
+  # FRAME_RANGE: [20,150]
+  FRAME_RANGE: [20,22]
+  # FRAME_RANGE: [20,150]
   CAM_RANGE: [17]  # [id] for single cam_id
   IMG_DIR: '_/rgb0/%d/%03d.png'
-  # IMG_DIR: '_/rgb0/%03d.png'  
   GAMMA: 1.0
-  OUTPUT_SIZE: [800, 800] # H * W
+  OUTPUT_SIZE: [512, 512]
 
   CALIB_PATH: '_/calib.mat'
   CALIB_FORMAT: 'convert'
@@ -28,8 +34,7 @@ DATASET:
   UV_PATH: ''
   MESH_DIR: '_/mesh/%03d.obj'
   PRELOAD_MESHS: True
-  LOAD_PRECOMPUTE: False
-
+  
   # relight
   LIGHTING_IDX: 0
   # autgmentation
@@ -41,18 +46,15 @@ DATASET:
   FLIP: 0.5
 MODEL:
   INIT_WEIGHTS: True
-  NAME: dnr_unet_512_tex1024
+  NAME: dnr_unet_800_tex800
   PRETRAINED: ''
   TEX_MAPPER:
     NUM_CHANNELS: 16
     NUM_SIZE: 512
     MIPMAP_LEVEL: 1
-    # NUM_CHANNELS: 24
-    # NUM_SIZE: 2048
-    # MIPMAP_LEVEL: 4
     SH_BASIS: False
     NUM_PARAMS: -1
-  RENDER_NET:
+  RENDER_MODULE:
     NF0: 64
     OUTPUT_CHANNELS: 3
     NUM_PARAMS: -1
@@ -65,17 +67,17 @@ MODEL:
 #   WITH_HEATMAPS_LOSS: [True, True]
 #   HEATMAPS_LOSS_FACTOR: [1.0, 1.0]
 TRAIN:
-  EXP_NAME: 'newTrain'
+  EXP_NAME: 'trainTex'
   BATCH_SIZE: 1
   BEGIN_EPOCH: 0
   RESUME: False
-  CHECKPOINT: '_/logs/dnr/07-09_10-00-38_skipinv_10_realdome_cx_newTrain/model_epoch_15_iter_1800_.pth'
+  CHECKPOINT: ''
   END_EPOCH: 10000
   GAMMA: 1.0
   SAMPLING_PATTERN: 'skipinv_10'
   SAMPLING_PATTERN_VAL: 'skip_10'
-  VAL_FREQ: 100
-  SHUFFLE: True
+  VAL_FREQ: 50
+  SHUFFLE: False # TO-DO
   LR: 0.001
 #  LR_FACTOR: 0.1
 #  LR_STEP: [200, 260]
@@ -83,19 +85,18 @@ TRAIN:
 #  MOMENTUM: 0.9
 #  WD: 0.0001
 TEST:
-  BATCH_SIZE: 2
+  BATCH_SIZE: 3
   FRAME_RANGE: [20,150]
-  # CALIB_PATH: '_/test_calib53/calib20200619_test_close_53.mat'
-  # CALIB_PATH: '_/test_calib17/calib20200619_test_orig_17.mat'
-  CALIB_PATH: '_/calib.mat'
+  CALIB_PATH: '_/test_calib/calib20200703_mars_test_360.mat'
   SAMPLING_PATTERN: 'all'
   FORCE_RECOMPUTE: True
-  MODEL_PATH: '_/logs/dnr/07-09_15-30-32_skipinv_10_realdome_cx_newTrain/model_epoch_162_iter_19000_.pth' 
-  SAVE_FOLDER: 'img_clo_53_91000_f149'
+  MODEL_PATH: './data/realdome_cx/logs/dnr/07-09_15-30-32_skipinv_10_realdome_cx_newTrain/model_epoch_162_iter_19000_.pth' 
+  SAVE_FOLDER: 'img_est_38000_f200'
 #  IMAGES_PER_GPU: 1
 #  SCALE_FACTOR: [1]
 DEBUG:
   DEBUG: True
+  SAVE_NEURAL_TEX: True
 #   SAVE_BATCH_IMAGES_GT: False
 #   SAVE_BATCH_IMAGES_PRED: False
 #   SAVE_HEATMAPS_GT: True

@@ -11,8 +11,7 @@ import collections
 import random
 from PIL import Image
 
-from dataset.data_util import calc_center
-from dataset.data_util import rodrigues_rotation_matrix
+from utils.util import calc_center, rodrigues_rotation_matrix
 
 
 class RandomTransform(object):
