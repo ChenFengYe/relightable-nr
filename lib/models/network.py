@@ -127,18 +127,17 @@ class TextureCreater(nn.Module):
 
 #         self.textures[0]: [1, H, W, C]
 #         '''
-#         # if self.texture_merge and neural_tex is not None:
-#         #     if neural_tex.shape[2:4] != self.textures[0].shape[1:3]:
-#         #         print(neural_tex.shape)
-#         #         print(self.textures[0].shape)
-#         #         raise ValueError('Input nerual tex shape is not equal to max size of textures')
-#         #     # self.textures[0] = torch.nn.Parameter(neural_tex.permute((0,2,3,1)))
-#         #     # self.textures[0].data = neural_tex.permute((0,2,3,1))
+#         if self.texture_merge and neural_tex is not None:
+#             if neural_tex.shape[2:4] != self.textures[0].shape[1:3]:
+#                 print(neural_tex.shape)
+#                 print(self.textures[0].shape)
+#                 raise ValueError('Input nerual tex shape is not equal to max size of textures')
+#             self.textures[0] = torch.nn.Parameter(neural_tex.permute((0,2,3,1)))
+#             # self.textures[0].data = neural_tex.permute((0,2,3,1))
 
 #         for ithLevel in range(self.mipmap_level):
 #             texture_size_i = self.textures_size[ithLevel]
 #             texture_i = self.textures[ithLevel]
-#             # texture_i = neural_tex.permute((0,2,3,1))
 #             ############################################################################
 #             # vertex texcoords map in [-1, 1]
 #             grid_uv_map = uv_map * 2. - 1.

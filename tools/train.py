@@ -134,9 +134,9 @@ def main():
 
         model_net.init_rasterizer(obj_data, view_dataset.global_RT)
 
-    imgs, uv_maps = view_dataset.get_all_view()
-
-    model_net.init_all_atlas(imgs, uv_maps)
+    if type(model_net) == MergeNet:
+        imgs, uv_maps = view_dataset.get_all_view()
+        model_net.init_all_atlas(imgs, uv_maps)
     # model_net.set_mode(is_train = True)
     # model = DataParallelModel(model_net)
     # model.cuda()
