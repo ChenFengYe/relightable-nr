@@ -1,0 +1,114 @@
+AUTO_RESUME: True
+GPUS: 0,1,2
+VERBOSE: True
+
+# CUDNN:
+#   BENCHMARK: True
+#   DETERMINISTIC: False
+#   ENABLED: True
+LOG:
+  CFG_NAME: 200810_mapper_densepose_cx_merge.yaml
+  LOG_DIR: log
+  PRINT_FREQ: 500
+  CHECKPOINT_FREQ: 2000
+DATASET:
+  DATASET: densepose
+
+  ROOT: 'data/densepose_cx'
+  FRAME_RANGE: [20,35,50,65,80,95,110,125,140]
+  CAM_RANGE: [-1]  # [id] for single cam_id
+  IMG_DIR: '%03d_017.png'
+  GAMMA: 1.0
+  OUTPUT_SIZE: [512, 512]
+
+  CALIB_PATH: '_/calib.mat'
+  CALIB_FORMAT: 'convert'
+
+  # 3D data
+  TEX_PATH: ''
+  UV_PATH: ''
+  MESH_DIR: ''
+  PRELOAD_MESHS: False
+  PRELOAD_VIEWS: False  
+
+  # relight
+  LIGHTING_IDX: 0
+  # autgmentation
+  MAX_SHIFT: 50
+  MAX_ROTATION: 30
+  MAX_SCALE: 1.5
+  FLIP: 0.5
+
+  # PREPROCESS_MODE: 'scale_shortside_and_crop'
+  # LOAD_SIZE: 512
+  # CROP_SIZE: 512
+  # ASPECT_RATIO: 1.0
+  # NO_FLIP: False
+MODEL:
+  INIT_WEIGHTS: True
+  NAME: MergeNet # RenderNet FeatureNet MergeNet
+  PRETRAINED: ''
+  TEX_CREATER:
+    NUM_CHANNELS: 27 # num_img * 3 
+    NUM_SIZE: 512
+  FEATURE_MODULE:
+    NF0: 64
+    NUM_DOWN: 5
+    NUM_PARAMS: -1
+  TEX_MAPPER:
+    NUM_CHANNELS: 3
+    NUM_SIZE: 512
+    MIPMAP_LEVEL: 1
+    SH_BASIS: False
+    MERGE_TEX: True
+    NUM_PARAMS: -1
+  RENDER_MODULE:
+    NF0: 64
+    NUM_DOWN: 5
+    OUTPUT_CHANNELS: 3
+    NUM_PARAMS: -1
+# LOSS:
+#   NUM_STAGES: 2
+#   AE_LOSS_TYPE: exp
+#   WITH_AE_LOSS: [True, False]
+#   PUSH_LOSS_FACTOR: [0.001, 0.001]
+#   PULL_LOSS_FACTOR: [0.001, 0.001]
+#   WITH_HEATMAPS_LOSS: [True, True]
+#   HEATMAPS_LOSS_FACTOR: [1.0, 1.0]
+TRAIN:
+  EXP_NAME: 'merge_net'
+  BATCH_SIZE: 2
+  BEGIN_EPOCH: 0
+  RESUME: False
+  CHECKPOINT: ''
+  END_EPOCH: 100000
+  GAMMA: 1.0
+  SAMPLING_PATTERN: 'all'
+  SAMPLING_PATTERN_VAL: 'skip_10'
+  VAL_FREQ: -1
+  SHUFFLE: True
+  LR: 0.001
+#  LR_FACTOR: 0.1
+#  LR_STEP: [200, 260]
+#  OPTIMIZER: adam
+#  MOMENTUM: 0.9
+#  WD: 0.0001
+TEST:
+  BATCH_SIZE: 2
+  FRAME_RANGE: [-1,-1]
+  CALIB_PATH: '_/test_calib/calib.mat'
+  SAMPLING_PATTERN: 'all'
+  MODEL_PATH: './log/08-02_17-27-44_skipinv_10_chenxin_zhen_try_new/model_epoch_11999_iter_60000_.pth'
+  SAVE_FOLDER: '200803_test_images'
+#  IMAGES_PER_GPU: 1
+#  SCALE_FACTOR: [1]
+DEBUG:
+  DEBUG: False
+  SAVE_TRANSFORMED_IMG: False
+  SAVE_TRANSFORMED_MASK: False
+  SAVE_NEURAL_TEX: False
+#   SAVE_BATCH_IMAGES_GT: False
+#   SAVE_BATCH_IMAGES_PRED: False
+#   SAVE_HEATMAPS_GT: True
+#   SAVE_HEATMAPS_PRED: True
+#   SAVE_TAGMAPS_PRED: True

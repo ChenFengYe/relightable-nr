@@ -27,13 +27,22 @@ class RandomTransform(object):
         self.isTrain = isTrain
         self.max_rotation = max_rotation
         self.is_center = is_center
+        if not isTrain:
+            self.max_shift = 0
+            self.max_scale = 1.0
+            self.min_scale = 1.0
+            self.max_rotation = 0
+            self.is_center = False
 
-    def __call__(self, img, K=None, Tc=None, mask=None, uvmap=None):
+    def __call__(self, img=None, K=None, Tc=None, mask=None, uvmap=None):
         # mask is an RGB image whose values are either 1 or 0, uvmap is an RGB image whose values are between 0 and 1
         # the third channel of uvmap is our added channel in order to rotate or somehow
 
         # change extrinsic from "world2cam" to "cam2world"
-        width, height = img.size
+        if img is not None:
+            width, height = img.size
+        elif uvmap is not None:
+            width, height = uvmap.shape[0:2]
 
         if K == None:
             K = np.eye(4)
@@ -54,8 +63,12 @@ class RandomTransform(object):
         offset_x = random.randint(-self.max_shift, self.max_shift)
         offset_y = random.randint(-self.max_shift, self.max_shift)
 
-        rotation = (random.random() - 0.5) * np.deg2rad(self.max_rotation)
-        ration = random.random() * (self.max_scale - self.min_scale) + self.min_scale
+        if self.isTrain:
+            rotation = (random.random() - 0.5) * np.deg2rad(self.max_rotation)
+            ration = random.random() * (self.max_scale - self.min_scale) + self.min_scale
+        else:
+            rotation = 0.
+            ration = 1.
 
         R = torch.Tensor(rodrigues_rotation_matrix(np.array([0, 0, 1]), rotation))
         Tc[0:3, 0:3] = torch.matmul(Tc[0:3, 0:3], R)
@@ -89,12 +102,12 @@ class RandomTransform(object):
             translation = tuple(translation)
 
         # translation = (width /2-K[0,2],height/2-K[1,2])
-
-        img = T.functional.rotate(img, angle=np.rad2deg(rotation), resample=Image.BICUBIC, center=(K[0, 2], K[1, 2]))
-        img = T.functional.affine(img, angle=0, translate=translation, scale=1, shear=0)
-        img = T.functional.crop(img, 0, 0, int(height / ration), int(height * self.size[1] / ration / self.size[0]))
-        img = T.functional.resize(img, self.size, self.interpolation)
-        img = T.functional.to_tensor(img)
+        if img is not None:
+            img = T.functional.rotate(img, angle=np.rad2deg(rotation), resample=Image.BICUBIC, center=(K[0, 2], K[1, 2]))
+            img = T.functional.affine(img, angle=0, translate=translation, scale=1, shear=0)
+            img = T.functional.crop(img, 0, 0, int(height / ration), int(height * self.size[1] / ration / self.size[0]))
+            img = T.functional.resize(img, self.size, self.interpolation)
+            img = T.functional.to_tensor(img)
 
         if mask is not None:
             mask = T.functional.rotate(mask, angle=np.rad2deg(rotation), resample=Image.BICUBIC, center=(K[0, 2], K[1, 2]))
@@ -110,8 +123,11 @@ class RandomTransform(object):
 
             # u
             #  Image.BILINEAR
-            u_map = T.functional.rotate(u_map, angle=np.rad2deg(rotation), resample=Image.NEAREST, center=(K[0, 2], K[1, 2]))
-            u_map = T.functional.affine(u_map, angle=0, translate=translation, scale=1, shear=0)
+            if self.isTrain:
+                u_map = T.functional.rotate(u_map, angle=np.rad2deg(rotation), resample=Image.NEAREST, center=(K[0, 2], K[1, 2]))
+                u_map = T.functional.affine(u_map, angle=0, translate=translation, scale=1, shear=0)
+            else:
+                ration = 1.0
             u_map = T.functional.crop(u_map, 0, 0, int(height / ration),
                                      int(height * self.size[1] / ration / self.size[0]))
             u_map = T.functional.resize(u_map, self.size, Image.NEAREST)
@@ -119,8 +135,11 @@ class RandomTransform(object):
 
             # v
             #  Image.BILINEAR
-            v_map = T.functional.rotate(v_map, angle=np.rad2deg(rotation), resample=Image.NEAREST, center=(K[0, 2], K[1, 2]))
-            v_map = T.functional.affine(v_map, angle=0, translate=translation, scale=1, shear=0)
+            if self.isTrain:
+                v_map = T.functional.rotate(v_map, angle=np.rad2deg(rotation), resample=Image.NEAREST, center=(K[0, 2], K[1, 2]))
+                v_map = T.functional.affine(v_map, angle=0, translate=translation, scale=1, shear=0)
+            else:
+                ration = 1.0
             v_map = T.functional.crop(v_map, 0, 0, int(height / ration),
                                      int(height * self.size[1] / ration / self.size[0]))
             v_map = T.functional.resize(v_map, self.size, Image.NEAREST)
@@ -149,3 +168,36 @@ class RandomTransform(object):
 
     def __repr__(self):
         return self.__class__.__name__ + '()'
+
+# class ResizeTransform(object):
+#     def __init__(self, size, interpolation=Image.BICUBIC, isTrain=False):
+#         self.size = size
+#         self.interpolation = interpolation
+#         self.isTrain = isTrain
+
+#     def __call__(self, uvmap=None):
+#         width, height = uvmap.shape[0:2]
+#         u_map = Image.fromarray(uvmap[:,:,0].astype('float32'), mode = 'F')
+#         v_map = Image.fromarray(uvmap[:,:,1].astype('float32'), mode = 'F')
+
+#         # u
+#         #  Image.BILINEAR
+#         ration = 1.0
+#         u_map = T.functional.crop(u_map, 0, 0, int(height / ration),
+#                                     int(height * self.size[1] / ration / self.size[0]))
+#         u_map = T.functional.resize(u_map, self.size, Image.NEAREST)
+#         u_map = T.functional.to_tensor(u_map)
+
+#         # v
+#         #  Image.BILINEAR
+#         v_map = T.functional.crop(v_map, 0, 0, int(height / ration),
+#                                     int(height * self.size[1] / ration / self.size[0]))
+#         v_map = T.functional.resize(v_map, self.size, Image.NEAREST)
+#         v_map = T.functional.to_tensor(v_map)
+
+#         uvmap = torch.cat((u_map, v_map), dim=0)
+
+#         return uvmap
+
+#     def __repr__(self):
+#         return self.__class__.__name__ + '()'

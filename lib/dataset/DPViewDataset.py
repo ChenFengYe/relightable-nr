@@ -5,7 +5,9 @@ from PIL import Image
 import scipy.io
 from dataset.data_util_densepose.data_util import get_params, get_transform, TransferDenseposeUV, is_image_file
 from dataset.data_util_densepose.transform import RandomTransform
+
 import torch
+import torchvision.transforms as T
 
 '''
 Dataloader for dataset with uv map from densepose
@@ -49,10 +51,6 @@ class DPViewDataset():
                         self.img_names.append(x)
 
             print(" building transform for images...")
-            self.transform = RandomTransform(cfg.DATASET.OUTPUT_SIZE,
-                                             cfg.DATASET.MAX_SHIFT,
-                                             cfg.DATASET.MAX_SCALE,
-                                             cfg.DATASET.MAX_ROTATION)
         else:
             self.frame_range = cfg.TEST.FRAME_RANGE
 
@@ -66,16 +64,42 @@ class DPViewDataset():
                     self.img_names.append(cfg.DATASET.IMG_DIR % frame_idx)
             else:
                 for x in os.listdir(self.uvmap_dir):
-                    self.img_names.append(x)
+                    if(x[-4:] == '.mat') and (x[9:11] == '01') :
+                        self.img_names.append(x)
 
             self.img_names = sorted(self.img_names)
             print("image names", self.img_names)
         if cfg.VERBOSE:
             print("image names", self.img_names)
 
+        self.transform = RandomTransform(cfg.DATASET.OUTPUT_SIZE,
+                                            cfg.DATASET.MAX_SHIFT,
+                                            cfg.DATASET.MAX_SCALE,
+                                            cfg.DATASET.MAX_ROTATION,
+                                            is_train)
     def __len__(self):
         return len(self.img_names)
 
+    def get_all_view(self):
+        imgs = torch.zeros(len(self.img_names), 3, 512, 512)
+        uvmaps = torch.zeros(len(self.img_names), 512, 512, 2)
+        for idx, img_name in enumerate(self.img_names):
+            img_key = os.path.splitext(img_name)[0]
+
+            img_path = os.path.join(self.img_dir, img_name)
+            uvmap_path = os.path.join(self.uvmap_dir, img_key + '_IUV.mat')
+
+            img = Image.open(img_path)
+            img = T.functional.to_tensor(img)
+            imgs[idx, ...] = img
+
+            uvmap = scipy.io.loadmat(uvmap_path)['uv_map']
+            uvmap = TransferDenseposeUV(uvmap)
+            uvmap = uvmap - np.floor(uvmap)
+            uvmap = torch.tensor(uvmap.astype(np.float32))
+            uvmaps[idx, ...] = uvmap
+        return imgs, uvmaps        
+    
     def __getitem__(self, idx):
         if self.is_train:
             img_path = os.path.join(self.img_dir, self.img_names[idx])
@@ -116,9 +140,9 @@ class DPViewDataset():
             uvmap = uvmap[:2, ...]
             uvmap[uvmap >= 1] = 1 - 1e-5
             uvmap[uvmap < 0] = 0
-            
-            mask[mask > 0] = 1
+            uvmap = uvmap.permute(1,2,0)
 
+            mask[mask > 0] = 1
             return {'img': img, 'uv_map': uvmap, 'mask': mask}
         else:
             img_key = os.path.splitext(self.img_names[idx])[0]
@@ -140,8 +164,12 @@ class DPViewDataset():
 
             uvmap = scipy.io.loadmat(uvmap_path)['uv_map']
             uvmap = TransferDenseposeUV(uvmap)
+
+            _, _, uvmap, _, _ = self.transform(img=None, mask=None, uvmap=uvmap)
+
             uvmap = uvmap - np.floor(uvmap)
-            uvmap = torch.tensor(uvmap.astype(np.float32)).permute(2,0,1)
+            # uvmap = torch.tensor(uvmap.astype(np.float32))
+
 
             # w, h = uvmap.shape[:2]
             # uvmap_3channel = np.concatenate([uvmap, np.zeros([w, h, 1])], axis=2) * 255

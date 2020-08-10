@@ -5,41 +5,20 @@ from lib.utils import util
 
 from utils.encoding import DataParallelModel
 
-from pytorch_prototyping.pytorch_prototyping import *
-
-# class RenderNet(torch.nn.Module):
-#     def __init__(self, cfg):
-#         super(RenderNet, self).__init__()
-
-#         self.in_layer = nn.Conv2d(3, 3, 3, bias=True, stride=1)
-
-#         # self.net = Unet(in_channels = 3,
-#         #          out_channels = 3,
-#         #          outermost_linear = True,
-#         #          use_dropout = True,
-#         #          dropout_prob = 0.1,
-#         #          nf0 = cfg.MODEL.RENDER_MODULE.NF0,
-#         #          norm = torch.nn.InstanceNorm2d,
-#         #         #  norm = nn.BatchNorm2d,# chenxin 200803 temporary change for debug
-#         #          max_channels = 8 * cfg.MODEL.RENDER_MODULE.NF0,
-#         #          num_down = cfg.MODEL.RENDER_MODULE.NUM_DOWN,
-#         #          out_channels_gcn = 512,
-#         #          use_gcn = False,
-#         #          outermost_highway_mode = 'concat')
-
-
-#     def forward(self, uv_map):
-#         a = self.in_layer.forward(uv_map)
-#         # a = self.Unet(uv_map)
-#         return a
-#     def load_checkpoint(self, checkpoint_path = None):
-#         pass
-
-class RenderNet(torch.nn.Module):
+class MergeNet(torch.nn.Module):
     def __init__(self, cfg):
-        super(RenderNet, self).__init__()
+        super(MergeNet, self).__init__()
 
         self.cfg = cfg
+        # texture creater
+        self.texture_creater = network.TextureCreater(texture_size = cfg.MODEL.TEX_CREATER.NUM_SIZE,
+                                                texture_num_ch = cfg.MODEL.TEX_CREATER.NUM_CHANNELS)
+        # feature module
+        self.feature_module = network.FeatureModule(nf0 = cfg.MODEL.FEATURE_MODULE.NF0,
+                                    in_channels = cfg.MODEL.TEX_CREATER.NUM_CHANNELS,
+                                    out_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
+                                    num_down_unet = cfg.MODEL.FEATURE_MODULE.NUM_DOWN,
+                                    use_gcn = False)
         # texture mapper
         self.texture_mapper = network.TextureMapper(texture_size = cfg.MODEL.TEX_MAPPER.NUM_SIZE,
                                                 texture_num_ch = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
@@ -55,13 +34,27 @@ class RenderNet(torch.nn.Module):
         # interpolater
         #interpolater = network.Interpolater()
 
-        texture_mapper_module = self.texture_mapper
-        render_module = self.render_module
+        tex_size = cfg.MODEL.TEX_CREATER.NUM_SIZE
+        tex_num_ch = cfg.MODEL.TEX_CREATER.NUM_CHANNELS
+        tex_num_ch_all = cfg.MODEL.TEX_CREATER.NUM_CHANNELS
 
-        self.part_list = [texture_mapper_module, render_module]     # collect all networks
-        self.part_name_list = ['texture_mapper', 'render_module']
+        self.orig_tex = torch.ones(1, tex_size, tex_size, tex_num_ch, dtype = torch.float32)
+        self.all_atlas = torch.ones(1, tex_num_ch_all, tex_size, tex_size, dtype = torch.float32)
+        self.neural_tex = torch.ones(1, 3, tex_size, tex_size, dtype = torch.float32)
+
+        self.part_list = [self.feature_module, self.texture_mapper, self.render_module]     # collect all networks
+        self.part_name_list = ['feature_module','texture_mapper', 'render_module']
+
+    def init_all_atlas(self, imgs, uv_maps):
+    
+        all_atlas = self.texture_creater(imgs, uv_maps).permute(0,3,1,2)
+
+        # merge all img on data
+        shape_ = all_atlas.shape
+        self.all_atlas = all_atlas.view(1, -1, shape_[2], shape_[3])
 
     def init_rasterizer(self, obj_data, global_RT):
+
         self.rasterizer = network.Rasterizer(self.cfg,
                             obj_data = obj_data,
                             # preset_uv_path = cfg.DATASET.UV_PATH,
@@ -102,33 +95,37 @@ class RenderNet(torch.nn.Module):
         if checkpoint_path:
             print(' Checkpoint_path : %s'%(checkpoint_path))
             util.custom_load(self.part_list, self.part_name_list, checkpoint_path)
+            # util.custom_load(self.part_list, self.part_name_list, checkpoint_path)
         else:
             print(' Not load params. ')
 
     def save_checkpoint(self, checkpoint_path):
-        util.custom_save(checkpoint_path, 
-                        self.part_list, 
-                        self.part_name_list)                        
+        util.custom_save(checkpoint_path,  self.part_list, self.part_name_list)                        
 
-    def set_parallel(self, gpus):       
+    def set_parallel(self, gpus):
+        if hasattr(self, 'rasterizer'):
+            self.rasterizer.cuda()
+        self.texture_creater.cuda()
+        self.feature_module.cuda()
         self.texture_mapper.cuda()
         self.render_module.cuda()
         #interpolater.cuda()
-        if hasattr(self, 'rasterizer'):
-            self.rasterizer.cuda()
 
     def set_mode(self, is_train = True):
         if is_train:
             # set to training mode
+            self.texture_creater.eval()
             self.texture_mapper.train()
+            self.feature_module.train()
             self.render_module.train()
             if hasattr(self, 'rasterizer'):
                 self.rasterizer.eval()      # not train now
+            #self.interpolater.train()
 
             print(" number of generator parameters:")
             self.cfg.defrost()
             self.cfg.MODEL.TEX_MAPPER.NUM_PARAMS = util.print_network(self.texture_mapper).item()
-            # cfg.MODEL.FEATURE_MODULE.NUM_PARAMS = util.print_network(feature_module).item()
+            self.cfg.MODEL.FEATURE_MODULE.NUM_PARAMS = util.print_network(self.feature_module).item()
             self.cfg.MODEL.RENDER_MODULE.NUM_PARAMS = util.print_network(self.render_module).item()
             self.cfg.freeze()
             print("*" * 100)
@@ -136,31 +133,44 @@ class RenderNet(torch.nn.Module):
             pass
     
     def get_atalas(self):
-        texture_mapper_module = self.texture_mapper
-        # if type(self.texture_mapper) == DataParallelModel:
-        #     texture_mapper_module = self.texture_mapper.module
-        return texture_mapper_module.textures[0].clone().detach().cpu().permute(0,3,1,2)[:, 0:3, :, :]
+        # atlas_nr = self.texture_mapper.textures[0].clone().detach().cpu()[:, 0:3, :, :]
+        atlas_nr = self.neural_tex
+        # atlas_orig = self.orig_tex.clone().detach().cpu().permute(0,3,1,2)
+        # atlas = torch.cat((atlas_nr, atlas_orig),dim = 0)
+        return atlas_nr
+
+    def get_neural_img(self):
+        return self.neural_img
 
     def forward(self, uv_map, img_gt=None, alpha_map=None, ROI=None):
-        # sample texture
-        neural_img = self.texture_mapper(uv_map = uv_map)
 
         # rendering module
-        print(neural_img.shape)
-        outputs = self.render_module(neural_img, None)
-        
+        neural_tex = self.feature_module(orig_texs = self.all_atlas.cuda(), neural_tex = None)
+
+        self.neural_tex = neural_tex
+
+        # sample texture
+        self.neural_img = self.texture_mapper(uv_map = uv_map, neural_tex = neural_tex)
+
+        # rendering module
+        outputs = self.render_module(self.neural_img, None)
+
         # img_max_val = 2.0
         # outputs = (outputs * 0.5 + 0.5) * img_max_val # map to [0, img_max_val]
 
         if alpha_map is not None:
             outputs = outputs * alpha_map
-            neural_img = outputs * alpha_map
+            self.neural_img = outputs * alpha_map
 
         if ROI is not None:
             outputs = outputs * ROI
-            neural_img = outputs * ROI
-        outputs = torch.cat((outputs, neural_img), dim = 1)
+            self.neural_img = outputs * ROI
+
+        outputs = torch.cat((outputs, self.neural_img), dim = 1)
+
         return outputs
 
     def parameters(self):
-        return list(self.texture_mapper.parameters()) + list(self.render_module.parameters())
+        return list(self.feature_module.parameters()) + \
+               list(self.texture_mapper.parameters()) + \
+               list(self.render_module.parameters())

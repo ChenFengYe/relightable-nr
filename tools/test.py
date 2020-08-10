@@ -112,7 +112,8 @@ def main():
 
     model_net.set_parallel(cfg.GPUS)
     model_net.set_mode(is_train = True)
-    model = DataParallelModel(model_net)
+    model = model_net
+    # model = DataParallelModel(model_net)
     model.cuda()
 
     print('Begin inference...')
@@ -132,10 +133,9 @@ def main():
                 # alpha_map = view_trgt['mask'].cuda()
 
             outputs = model.forward(uv_map = uv_map, img_gt = img_gt)
-            
             neural_img = outputs[:, 3:6, : ,:].clamp(min = 0., max = 1.)            
             outputs = outputs[:, 0:3, : ,:]
-
+            
             if type(outputs) == list:
                 for iP in range(len(outputs)):
                     # outputs[iP] = outputs[iP].to(device)

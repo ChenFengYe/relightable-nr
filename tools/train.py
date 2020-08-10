@@ -10,6 +10,8 @@ import _init_paths
 from lib.utils.util import create_logger
 from lib.config import cfg,update_config
 
+import scipy.io
+
 def parse_args():
     parser = argparse.ArgumentParser()
     # general
@@ -30,7 +32,7 @@ def main():
     update_config(cfg, args)
 
     print("Setup Log ...")
-    log_dir, iter, checkpoint_path = create_logger(cfg, args.cfg)
+    log_dir, iter_init, checkpoint_path = create_logger(cfg, args.cfg)
     print(args)
     print(cfg)
     print("*" * 100)
@@ -50,6 +52,7 @@ def main():
     from lib.models import metric
     from lib.models.render_net import RenderNet
     from lib.models.feature_net import FeatureNet
+    from lib.models.merge_net import MergeNet
 
     from lib.engine.loss import MultiLoss  
 
@@ -131,14 +134,17 @@ def main():
 
         model_net.init_rasterizer(obj_data, view_dataset.global_RT)
 
-    # model_net.set_parallel(cfg.GPUS)
+    imgs, uv_maps = view_dataset.get_all_view()
+
+    model_net.init_all_atlas(imgs, uv_maps)
     # model_net.set_mode(is_train = True)
     # model = DataParallelModel(model_net)
     # model.cuda()
+    
     model.train()
 
     print('Begin training...')
-    # init value
+    iter = iter_init    
     for epoch in range(cfg.TRAIN.BEGIN_EPOCH, cfg.TRAIN.END_EPOCH):
         for view_trgt in view_dataloader:
             start = time.time()
@@ -151,7 +157,7 @@ def main():
                 uv_map, alpha_map, cur_obj_path = model.module.project_with_rasterizer(cur_obj_path, view_dataset.objs, view_trgt)
                 ROI = view_trgt['ROI'].cuda()
             elif cfg.DATASET.DATASET == 'densepose':
-                uv_map = view_trgt['uv_map'].permute(0, 2, 3, 1).cuda()
+                uv_map = view_trgt['uv_map'].cuda()
                 alpha_map = view_trgt['mask'].cuda()
 
             # # check per iter image
@@ -194,10 +200,11 @@ def main():
             loss_g.backward()
             optimizerG.step()
 
-            # # chcek num
-            # for name, param in model. named_parameters(): 
-            #     if param.grad is None:
-            #         print(name, True if param.grad is not None else False)
+            # chcek gradiant
+            if iter == iter_init:
+                for name, param in model.named_parameters(): 
+                    if param.grad is None:
+                        print(name, True if param.grad is not None else False)
 
             if type(outputs) == list:
                 for iP in range(len(outputs)):
@@ -260,6 +267,8 @@ def main():
 
             if iter % cfg.LOG.CHECKPOINT_FREQ == 0:
                 model_net.save_checkpoint(os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter)))
+                scipy.io.savemat('/data/NFS/new_disk/chenxin/relightable-nr/data/densepose_cx/logs/dnr/tmp/neural_img_epoch_%d_iter_%s_.npy'% (epoch, iter), {"neural_tex": model_net.neural_tex.cpu().clone().detach().numpy()})
+                model_net
 
             end = time.time()
             log_time = datetime.datetime.now().strftime('%m/%d') + '_' + datetime.datetime.now().strftime('%H:%M:%S') 
