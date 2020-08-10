@@ -211,8 +211,7 @@ class TextureMapper(nn.Module):
             raise ValueError('Texture merge not support mipmap now!')
 
         # create textures as images
-        ###########################################################
-        # self.textures = nn.ParameterList([])
+        self.textures = nn.ParameterList([])
         self.textures_size = []
         for ithLevel in range(self.mipmap_level):
             texture_size_i = np.round(self.texture_size.numpy() / (2.0 ** ithLevel)).astype(np.int)
@@ -225,13 +224,11 @@ class TextureMapper(nn.Module):
                 texture_i[..., :texture_init.shape[-1]] = texture_init[None, :]
                 texture_i[..., texture_init.shape[-1]:texture_init.shape[-1] * 2] = texture_init[None, :]
             self.textures_size.append(texture_size_i)
-        ###########################################################
-            # self.textures.append(nn.Parameter(texture_i))
+            self.textures.append(nn.Parameter(texture_i))
 
-        ###########################################################
-        # tex_flatten_mipmap_init = self.flatten_mipmap(start_ch = 0, end_ch = 6)
-        # tex_flatten_mipmap_init = torch.nn.functional.relu(tex_flatten_mipmap_init)
-        # self.register_buffer('tex_flatten_mipmap_init', tex_flatten_mipmap_init)
+        tex_flatten_mipmap_init = self.flatten_mipmap(start_ch = 0, end_ch = 6)
+        tex_flatten_mipmap_init = torch.nn.functional.relu(tex_flatten_mipmap_init)
+        self.register_buffer('tex_flatten_mipmap_init', tex_flatten_mipmap_init)
 
         if fix_texture:
             print('Fix neural textures.')
@@ -247,18 +244,17 @@ class TextureMapper(nn.Module):
 
         self.textures[0]: [1, H, W, C]
         '''
-        # if self.texture_merge and neural_tex is not None:
-        #     if neural_tex.shape[2:4] != self.textures[0].shape[1:3]:
-        #         print(neural_tex.shape)
-        #         print(self.textures[0].shape)
-        #         raise ValueError('Input nerual tex shape is not equal to max size of textures')
-        #     # self.textures[0] = torch.nn.Parameter(neural_tex.permute((0,2,3,1)))
-        #     # self.textures[0].data = neural_tex.permute((0,2,3,1))
+        if self.texture_merge and neural_tex is not None:
+            if neural_tex.shape[2:4] != self.textures[0].shape[1:3]:
+                print(neural_tex.shape)
+                print(self.textures[0].shape)
+                raise ValueError('Input nerual tex shape is not equal to max size of textures')
+            self.textures[0] = torch.nn.Parameter(neural_tex.permute((0,2,3,1)))
+            # self.textures[0].data = neural_tex.permute((0,2,3,1))
 
         for ithLevel in range(self.mipmap_level):
             texture_size_i = self.textures_size[ithLevel]
-            # texture_i = self.textures[ithLevel]
-            texture_i = neural_tex.permute((0,2,3,1))
+            texture_i = self.textures[ithLevel]
             ############################################################################
             # vertex texcoords map in [-1, 1]
             grid_uv_map = uv_map * 2. - 1.
@@ -991,4 +987,43 @@ class LightingLP(nn.Module):
         sh_coeff = sph_harm.fit_sh_coeff(samples = self.l_samples.to(self.l_dir.device), sh_basis_val = basis_val) # [num_lighting, num_basis, num_channel]
         self.register_buffer('sh_coeff', sh_coeff)
         return
-        
+
+##########################################################################################################################
+################################################## Modules for Aligning ##################################################
+##########################################################################################################################
+
+class AlignModule(nn.Module):
+    def __init__(self, input_channels, ref_channels, out_channels):
+        super(AlignModule, self).__init__()
+        self.down_h = nn.Conv2d(input_channels, out_channels, 1, bias=False)
+        self.down_l = nn.Conv2d(ref_channels, out_channels, 1, bias=False)
+        self.flow_make = nn.Conv2d(out_channels*2, 2, kernel_size=3, padding=1, bias=False)
+
+    def forward(self, input, ref):
+        '''
+        NCHW
+        '''
+        input_orign = input
+        h, w = ref.size()[2:]
+        size = (h, w)
+        ref = self.down_l(ref)
+        input= self.down_h(input)
+        # input = F.interpolate(input,size=size, mode="bilinear", align_corners=False)
+        flow = self.flow_make(torch.cat([input, ref], 1))
+        input = self.flow_warp(input_orign, flow, size=size)
+
+        return input
+
+    def flow_warp(self, input, flow, size):
+        out_h, out_w = size
+        n, c, h, w = input.size()
+
+        norm = torch.tensor([[[[out_w, out_h]]]]).type_as(input)
+        w = torch.linspace(-1.0, 1.0, out_h).view(-1, 1).repeat(1, out_w)
+        h = torch.linspace(-1.0, 1.0, out_w).repeat(out_h, 1)
+        grid = torch.cat((h.unsqueeze(2), w.unsqueeze(2)), 2)
+        grid = grid.repeat(n, 1, 1, 1).type_as(input)
+        grid = grid + flow.permute(0, 2, 3, 1) / norm
+
+        output = F.grid_sample(input, grid)
+        return output

@@ -7,34 +7,6 @@ from utils.encoding import DataParallelModel
 
 from pytorch_prototyping.pytorch_prototyping import *
 
-# class RenderNet(torch.nn.Module):
-#     def __init__(self, cfg):
-#         super(RenderNet, self).__init__()
-
-#         self.in_layer = nn.Conv2d(3, 3, 3, bias=True, stride=1)
-
-#         # self.net = Unet(in_channels = 3,
-#         #          out_channels = 3,
-#         #          outermost_linear = True,
-#         #          use_dropout = True,
-#         #          dropout_prob = 0.1,
-#         #          nf0 = cfg.MODEL.RENDER_MODULE.NF0,
-#         #          norm = torch.nn.InstanceNorm2d,
-#         #         #  norm = nn.BatchNorm2d,# chenxin 200803 temporary change for debug
-#         #          max_channels = 8 * cfg.MODEL.RENDER_MODULE.NF0,
-#         #          num_down = cfg.MODEL.RENDER_MODULE.NUM_DOWN,
-#         #          out_channels_gcn = 512,
-#         #          use_gcn = False,
-#         #          outermost_highway_mode = 'concat')
-
-
-#     def forward(self, uv_map):
-#         a = self.in_layer.forward(uv_map)
-#         # a = self.Unet(uv_map)
-#         return a
-#     def load_checkpoint(self, checkpoint_path = None):
-#         pass
-
 class RenderNet(torch.nn.Module):
     def __init__(self, cfg):
         super(RenderNet, self).__init__()
@@ -46,20 +18,23 @@ class RenderNet(torch.nn.Module):
                                                 texture_merge = cfg.MODEL.TEX_MAPPER.MERGE_TEX,
                                                 mipmap_level = cfg.MODEL.TEX_MAPPER.MIPMAP_LEVEL,
                                                 apply_sh = cfg.MODEL.TEX_MAPPER.SH_BASIS)
+        # align
+        self.align_module = network.AlignModule(input_channels = 2,
+                                    ref_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
+                                    out_channels = 3)
+
         # render net
         self.render_module = network.RenderingModule(nf0 = cfg.MODEL.RENDER_MODULE.NF0,
                                     in_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
                                     out_channels = 3,
                                     num_down_unet = cfg.MODEL.RENDER_MODULE.NUM_DOWN,
                                     use_gcn = False)
-        # interpolater
-        #interpolater = network.Interpolater()
-
         texture_mapper_module = self.texture_mapper
         render_module = self.render_module
+        align_module = self.align_module
 
-        self.part_list = [texture_mapper_module, render_module]     # collect all networks
-        self.part_name_list = ['texture_mapper', 'render_module']
+        self.part_list = [texture_mapper_module, render_module, align_module]     # collect all networks
+        self.part_name_list = ['texture_mapper', 'render_module', 'align_module']
 
     def init_rasterizer(self, obj_data, global_RT):
         self.rasterizer = network.Rasterizer(self.cfg,
@@ -142,11 +117,19 @@ class RenderNet(torch.nn.Module):
         return texture_mapper_module.textures[0].clone().detach().cpu().permute(0,3,1,2)[:, 0:3, :, :]
 
     def forward(self, uv_map, img_gt=None, alpha_map=None, ROI=None):
-        # sample texture
+        # first sample texture
         neural_img = self.texture_mapper(uv_map = uv_map)
 
+        # align uvmap
+        aligned_uv = self.align_module(input = uv_map.permute(0,3,1,2), ref = neural_img).permute(0,2,3,1)
+
+        # clamp uv [-1, 1]
+        aligned_uv = torch.clamp(aligned_uv, -1, 1)
+
+        # re-sample texture
+        neural_img = self.texture_mapper(uv_map = aligned_uv)
+
         # rendering module
-        print(neural_img.shape)
         outputs = self.render_module(neural_img, None)
         
         # img_max_val = 2.0
@@ -163,4 +146,4 @@ class RenderNet(torch.nn.Module):
         return outputs
 
     def parameters(self):
-        return list(self.texture_mapper.parameters()) + list(self.render_module.parameters())
+        return list(self.texture_mapper.parameters()) + list(self.render_module.parameters()) + list(self.align_module.parameters())
