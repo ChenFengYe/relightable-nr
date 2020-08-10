@@ -152,6 +152,7 @@ def _criterion_parallel_apply(modules, inputs, targets, kwargs_tup=None, devices
             if not isinstance(input, tuple):
                 input = (input,)
             with torch.cuda.device(device):
+                # ??? bug ???? to-do
                 output = module(*(input + target), **kwargs)
             with lock:
                 results[i] = output
@@ -178,6 +179,10 @@ def _criterion_parallel_apply(modules, inputs, targets, kwargs_tup=None, devices
         output = results[i]
         if isinstance(output, Exception):
             raise output
+        # print(results[i].shape)
+        # fix scaler
+        if output.shape == torch.Size([]):
+            output = output[None]
         outputs.append(output)
     return outputs
 

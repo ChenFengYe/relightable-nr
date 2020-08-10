@@ -1,28 +1,14 @@
 import argparse
 import os, time
 
-import torch
-from torch import nn
-from torch.utils.data import DataLoader
-
 import numpy as np
 import cv2
-import scipy.io
-from collections import OrderedDict
+import datetime
 
 import _init_paths
 
-from dataset import dataio
-
-from models import network
-
-from config import cfg
-from config import update_config
-
-from utils import camera
-from utils import sph_harm
-from utils import util
-from shutil import copyfile
+from lib.utils.util import cond_mkdir, make_gif
+from lib.config import cfg,update_config
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -39,7 +25,6 @@ def parse_args():
                         help='gpu id for multiprocessing training',
                         type=str)
     args = parser.parse_args()
-
     return args
 
 def main():
@@ -47,187 +32,130 @@ def main():
     args = parse_args()
     update_config(cfg, args)
 
-    print('Loading Dataset...')
-    view_dataset = dataio.ViewDataset(cfg,
-                                    root_dir = cfg.DATASET.ROOT,
-                                    calib_path = cfg.TEST.CALIB_PATH,
-                                    calib_format = cfg.DATASET.CALIB_FORMAT,
-                                    sampling_pattern = cfg.TEST.SAMPLING_PATTERN,
-                                    is_train = False,
-                                    )
-    num_view = len(view_dataset)
-    view_dataset.buffer_all()
-    view_dataloader = DataLoader(view_dataset, batch_size = cfg.TEST.BATCH_SIZE, shuffle = False, num_workers = 8)
-
-    print('Set device...')
-    # model = DataParallelModel(model, device_ids=cfg.GPUS).cuda()
-    # CUDA_VISIBLE_DEVICES = 2
-    # os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.GPUS)
-    device = torch.device('cuda')
-    # device = torch.device('cuda:'+ str(cfg.GPUS))
-
-    print('Build Network...')
-    # texture creater
-    texture_creater = network.TextureCreater(texture_size = cfg.MODEL.TEX_CREATER.NUM_SIZE,
-                                            texture_num_ch = cfg.MODEL.TEX_CREATER.NUM_CHANNELS)
-    # render net
-    # feature_module = network.FeatureNet(nf0 = cfg.MODEL.FEATURE_MODULE.NF0,
-    #                             in_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS + cfg.MODEL.TEX_CREATER.NUM_CHANNELS,
-    #                             out_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
-    #                             num_down_unet = 3,
-    #                             use_gcn = False)
-
-    # texture mapper
-    texture_mapper = network.TextureMapper(texture_size = cfg.MODEL.TEX_MAPPER.NUM_SIZE,
-                                            texture_num_ch = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
-                                            mipmap_level = cfg.MODEL.TEX_MAPPER.MIPMAP_LEVEL,
-                                            texture_init = None,
-                                            fix_texture = True,
-                                            apply_sh = cfg.MODEL.TEX_MAPPER.SH_BASIS)
-    # rendering module
-    render_module = network.RenderingModule(nf0 = cfg.MODEL.RENDER_MODULE.NF0,
-                                    in_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
-                                    out_channels = cfg.MODEL.RENDER_MODULE.OUTPUT_CHANNELS,
-                                    num_down_unet = 5,
-                                    use_gcn = False)
-    # interpolater
-    # interpolater = network.Interpolater()
-    # Init Rasterizer
-    cur_obj_path = ''
-    view_data = view_dataset.read_view(0)
-    cur_obj_path = view_data['obj_path']
-    frame_idx = view_data['f_idx']
-    obj_data = view_dataset.objs[frame_idx]
-    rasterizer = network.Rasterizer(cfg,
-                        obj_fp = cur_obj_path, 
-                        img_size = cfg.DATASET.OUTPUT_SIZE[0],
-                        obj_data = obj_data,
-                        camera_mode = cfg.DATASET.CAM_MODE,
-                        # preset_uv_path = cfg.DATASET.UV_PATH,
-                        global_RT = view_dataset.global_RT)
-
-    print('Loading Model...')
-    # load checkpoint
-    util.custom_load([texture_mapper, render_module], ['texture_mapper', 'render_module'], cfg.TEST.MODEL_PATH)
-
-    # move to device
-    texture_mapper.to(device)
-    # feature_module.to(device)    
-    render_module.to(device)
-    #interpolater.to(device)
-    rasterizer.to(device)
-
-    # use multi-GPU
-    # if cfg.GPUS != '':
-    #     texture_mapper = nn.DataParallel(texture_mapper)
-    #     render_module = nn.DataParallel(render_module)
-
-    # set mode
-    # texture_mapper.eval()
-    # render_module.eval()
-    # interpolater.eval()
-    # rasterizer.eval()
-
-    texture_mapper.train()
-    render_module.train()
-    # feature_module.train()
-    #interpolater.train()
-    rasterizer.train()
-
-    # # fix test 
-    # def set_bn_train(m):
-    #     if type(m) == torch.nn.BatchNorm2d:
-    #         m.train()
-    # render_module.apply(set_bn_train)
-
-    print('Set Log...')
+    # print("Setup Log ...")
     log_dir = cfg.TEST.CALIB_DIR.split('/')
     log_dir = os.path.join(cfg.TEST.MODEL_DIR, cfg.TEST.CALIB_NAME[:-4], 'resol_' + str(cfg.DATASET.OUTPUT_SIZE[0]), log_dir[-2],
                            log_dir[-1].split('_')[0] + '_' + log_dir[-1].split('_')[1] + '_' +
                            cfg.TEST.MODEL_NAME.split('-')[-1].split('.')[0])
-    util.cond_mkdir(log_dir)
-    save_dir_img = os.path.join(log_dir, 
-                                    cfg.TEST.SAVE_FOLDER, 
-                                    str(cfg.TEST.FRAME_RANGE[0]) + str(cfg.TEST.FRAME_RANGE[1]))
-    util.cond_mkdir(save_dir_img)
-    
+    cond_mkdir(log_dir)
+    if len(cfg.TEST.FRAME_RANGE) > 1:
+        save_dir_img_ext = cfg.TEST.SAVE_FOLDER + '_' + str(cfg.TEST.FRAME_RANGE[0]) +'_'+ str(cfg.TEST.FRAME_RANGE[-1])
+    else:
+        save_dir_img_ext = cfg.TEST.SAVE_FOLDER
+    save_dir_img = os.path.join(log_dir, save_dir_img_ext)
+    cond_mkdir(save_dir_img)
+    # log_dir, iter, checkpoint_path = create_logger(cfg, args.cfg)
+    # print(args)
+    # print(cfg)
+    # print("*" * 100)
+
+    print('Set gpus...' + str(cfg.GPUS)[1:-1])
+    print(' Batch size: '+ str(cfg.TEST.BATCH_SIZE))
+    if not cfg.GPUS == 'None':        
+        os.environ["CUDA_VISIBLE_DEVICES"]=str(cfg.GPUS)[1:-1]
+
+    # import pytorch after set cuda
+    import torch
+    import torchvision
+
+    from torch.utils.data import DataLoader
+    from tensorboardX import SummaryWriter
+
+    from lib.models import metric
+    from lib.models.render_net import RenderNet
+    from lib.models.feature_net import FeatureNet
+
+    from utils.encoding import DataParallelModel
+
+    from lib.dataset.DomeViewDataset import DomeViewDataset
+    from lib.dataset.DPViewDataset import DPViewDataset  
+
+    # device = torch.device('cuda: 2')
+    # device = torch.device('cuda: '+ str(cfg.GPUS[-1]))
+    # print("*" * 100)
+
+    print("Build dataloader ...")
+    # dataset for training views
+    if cfg.DATASET.DATASET == 'realdome_cx':
+        view_dataset = DomeViewDataset(cfg = cfg, 
+                                       root_dir = cfg.DATASET.ROOT,
+                                       calib_path = cfg.TEST.CALIB_PATH,
+                                       calib_format = cfg.DATASET.CALIB_FORMAT,
+                                       sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN,
+                                       is_train = False,
+                                       )
+    elif cfg.DATASET.DATASET == 'densepose':
+        view_dataset = DPViewDataset(cfg = cfg, 
+                                     is_train = False)
+    # view_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg)
+    print("*" * 100)
+
+    print('Build Network...')
+    model_net = eval(cfg.MODEL.NAME)(cfg)
+
+    print('Loading Model...')
+    checkpoint_path = cfg.TEST.MODEL_PATH
+    model_net.load_checkpoint(checkpoint_path)
+
+    print('Start buffering data for training...')
+    view_dataloader = DataLoader(view_dataset, batch_size = cfg.TEST.BATCH_SIZE, shuffle = False, num_workers = 8)
+    view_dataset.buffer_all()
+
+    # Init Rasterizer
+    if cfg.DATASET.DATASET == 'realdome_cx':
+        view_data = view_dataset.read_view(0)
+        cur_obj_path = view_data['obj_path']        
+        frame_idx = view_data['f_idx']
+        obj_data = view_dataset.objs[frame_idx]
+
+        model_net.init_rasterizer(obj_data, view_dataset.global_RT)
+
+    model_net.set_parallel(cfg.GPUS)
+    model_net.set_mode(is_train = True)
+    model = DataParallelModel(model_net)
+    model.cuda()
+
     print('Begin inference...')
     inter = 0
     with torch.no_grad():
-        # for ithView in range(num_view):
-        # view_trgt = view_dataset[ithView]
         for view_trgt in view_dataloader:
-
             start = time.time()
+
+            ROI = None
+            img_gt = None
+
+            # get image 
+            if cfg.DATASET.DATASET == 'realdome_cx':
+                uv_map, alpha_map, cur_obj_path = model.module.project_with_rasterizer(cur_obj_path, view_dataset.objs, view_trgt)
+            elif cfg.DATASET.DATASET == 'densepose':
+                uv_map = view_trgt['uv_map'].permute(0, 2, 3, 1).cuda()
+                # alpha_map = view_trgt['mask'].cuda()
+
+            outputs = model.forward(uv_map = uv_map, img_gt = img_gt)
             
-            # get view data
-            frame_idxs = view_trgt[0]['f_idx'].numpy()
-            # rasterize
-            uv_map = []            
-            alpha_map = []
-            for batch_idx, frame_idx in enumerate(frame_idxs):
-                obj_path = view_trgt[0]['obj_path'][batch_idx]
-                if cur_obj_path != obj_path:
-                    cur_obj_path = obj_path
-                    obj_data = view_dataset.objs[frame_idx]
-                    rasterizer.update_vs(obj_data['v_attr'])
+            neural_img = outputs[:, 3:6, : ,:].clamp(min = 0., max = 1.)            
+            outputs = outputs[:, 0:3, : ,:]
 
-                proj = view_trgt[0]['proj'].to(device)[batch_idx, ...]
-                pose = view_trgt[0]['pose'].to(device)[batch_idx, ...]
-                dist_coeffs = view_trgt[0]['dist_coeffs'].to(device)[batch_idx, ...]
+            if type(outputs) == list:
+                for iP in range(len(outputs)):
+                    # outputs[iP] = outputs[iP].to(device)
+                    outputs[iP] = outputs[iP].cuda()               
+                outputs = torch.cat(outputs, dim = 0)
 
-                uv_map_single, alpha_map_single, _, _, _, _, _, _, _, _, _, _, _, _ = \
-                    rasterizer(proj = proj[None, ...], 
-                                pose = pose[None, ...], 
-                                dist_coeffs = dist_coeffs[None, ...], 
-                                offset = None,
-                                scale = None,
-                                )
-                uv_map.append(uv_map_single[0, ...].clone().detach())
-                alpha_map.append(alpha_map_single[0, ...].clone().detach())
+            # img_max_val = 2.0
+            # outputs = (outputs * 0.5 + 0.5) * img_max_val # map to [0, img_max_val]
 
-            # fix alpha map
-            uv_map = torch.stack(uv_map, dim = 0)
-            alpha_map = torch.stack(alpha_map, dim = 0)[:, None, : , :]
-
-            # ignore sh_basis now
-            # sh_basis_map_fp = os.path.join(save_dir_sh_basis_map, str(ithView).zfill(5) + '.mat')
-            # if cfg.TEST.FORCE_RECOMPUTE or not os.path.isfile(sh_basis_map_fp):
-            #     print('Compute sh_basis_map...')
-            #     # compute view_dir_map in world space
-            #     view_dir_map, _ = camera.get_view_dir_map(uv_map.shape[1:3], proj_inv, R_inv)
-            #     # SH basis value for view_dir_map
-            #     sh_basis_map = sph_harm.evaluate_sh_basis(lmax = 2, directions = view_dir_map.reshape((-1, 3)).cpu().detach().numpy()).reshape((*(view_dir_map.shape[:3]), -1)).astype(np.float32) # [N, H, W, 9]                
-            #     # save
-            #     scipy.io.savemat(sh_basis_map_fp, {'sh_basis_map': sh_basis_map[0, :]})
-            # else:
-            #     sh_basis_map = scipy.io.loadmat(sh_basis_map_fp)['sh_basis_map'][None, ...]
-            # sh_basis_map = torch.from_numpy(sh_basis_map).to(device)
-
-            # sample texture
-            neural_img = texture_mapper(uv_map)
-
-            if cfg.DEBUG.DEBUG:
-                neural_tex = texture_mapper.texture_i.cpu().detach().numpy();
-                scipy.io.savemat('./Debug/Nerual_tex.mat', neural_tex)
-
-            # rendering module
-            outputs = render_module(neural_img, None)
-            img_max_val = 2.0
-            outputs = (outputs * 0.5 + 0.5) * img_max_val # map to [0, img_max_val]
-
-            # apply alpha
-            outputs = outputs * alpha_map
+            # if alpha_map:
+            #     outputs = outputs * alpha_map
 
             # save
             for batch_idx in range(0, outputs.shape[0]):
                 cv2.imwrite(os.path.join(save_dir_img, str(inter).zfill(5) + '.png'), outputs[batch_idx, :].permute((1, 2, 0)).cpu().detach().numpy()[:, :, ::-1] * 255.)
                 inter = inter + 1
-
+                
             end = time.time()
             print("View %07d   t_total %0.4f" % (inter, end - start))
-    
-    util.make_gif(save_dir_img, save_dir_img+'.gif')    
 
+    make_gif(save_dir_img, save_dir_img+'.gif')    
 if __name__ == '__main__':
     main()

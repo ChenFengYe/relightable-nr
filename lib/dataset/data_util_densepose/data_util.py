@@ -135,7 +135,7 @@ def TransferDenseposeUV(IUV):
             uv_map[x, y, 0] = 1. / 4. * i + U[x, y] / 4.  # u for y
             uv_map[x, y, 1] = 1. / 6. * j + (1 - V[x, y]) / 6.  # v for x, flip each sub v-axis
             uv_map[x, y, 1] = 1 - uv_map[x, y, 1]  # flip back whole v-axis
-    uv_map[uv_map >= 1.0] = 0.99
+    uv_map[uv_map >= 1.0] = 1 - 1e-5
     uv_map[uv_map < 0] = 0.
     return uv_map
 

@@ -12,8 +12,12 @@ from yacs.config import CfgNode as CN
 _C = CN()
 _C.AUTO_RESUME = True
 _C.GPUS = 0,
-_C.WORKERS = 8
+
 _C.RANK = 0
+_C.DIST_URL = 'tcp://127.0.0.1:23456'
+_C.WORLD_SIZE = 1
+_C.WORKERS = 16
+
 _C.VERBOSE = True
 _C.OUTPUT_DIR = ''
 # _C.DATA_DIR = ''
@@ -53,12 +57,12 @@ _C.DATASET.MAX_ROTATION = 0
 _C.DATASET.MAX_SCALE = 1.0
 _C.DATASET.FLIP = 0.5
 
-# dataset transform parameters for densepose dataset
-_C.DATASET.PREPROCESS_MODE = '' # to-do
-_C.DATASET.CROP_SIZE = 512      # merge with _C.DATASET.OUTPUT_SIZE
-_C.DATASET.LOAD_SIZE = 512      # merge with _C.DATASET.OUTPUT_SIZE
-_C.DATASET.ASPECT_RATIO = 1.0   # merge with _C.DATASET.MAX_SCALE
-_C.DATASET.NO_FLIP = True       # merge with _C.DATASET.FLIP
+# # dataset transform parameters for densepose dataset
+# _C.DATASET.PREPROCESS_MODE = '' # to-do
+# _C.DATASET.CROP_SIZE = 512      # merge with _C.DATASET.OUTPUT_SIZE
+# _C.DATASET.LOAD_SIZE = 512      # merge with _C.DATASET.OUTPUT_SIZE
+# _C.DATASET.ASPECT_RATIO = 1.0   # merge with _C.DATASET.MAX_SCALE
+# _C.DATASET.NO_FLIP = True       # merge with _C.DATASET.FLIP
 
 # # train test split
 # _C.DATASET.TEST_SET = ''
@@ -68,6 +72,8 @@ _C.DATASET.NO_FLIP = True       # merge with _C.DATASET.FLIP
 _C.MODEL = CN()
 _C.MODEL.INIT_WEIGHTS = True
 _C.MODEL.NAME = 'dnr_unet_512_tex1024'
+_C.MODEL.NAME = 'dnr_unet_512_tex1024'
+_C.MODEL.SYNC_BN = True
 _C.MODEL.PRETRAINED = ''
 _C.MODEL.TEX_CREATER = CN()
 _C.MODEL.TEX_CREATER.NUM_CHANNELS = 3   # Num of channels for orig texture
@@ -111,6 +117,8 @@ _C.TRAIN.LR = 0.001
 # _C.TRAIN.WD = 0.0001
 
 _C.LOSS = CN()
+_C.LOSS.WEIGHT_HSV = 0.1
+_C.LOSS.WEIGHT_ATLAS = 0.01
 
 _C.TEST = CN()
 _C.TEST.BATCH_SIZE = 3
@@ -230,8 +238,10 @@ def set_range(range_params):
         range_params = range_params
     elif len(range_params) == 2:
         range_params = list(range(range_params[0], range_params[1]))
-    else:
-        raise ValueError('Error! range value is not support')
+    elif len(range_params) > 2:
+        pass
+        # print(range_params)
+        # raise ValueError('Error! range value is not support')
     return range_params
 
 if __name__ == '__main__':

@@ -28,12 +28,26 @@ class RandomTransform(object):
         self.max_rotation = max_rotation
         self.is_center = is_center
 
-    def __call__(self, img, K, Tc, mask=None, uvmap=None):
+    def __call__(self, img, K=None, Tc=None, mask=None, uvmap=None):
         # mask is an RGB image whose values are either 1 or 0, uvmap is an RGB image whose values are between 0 and 1
         # the third channel of uvmap is our added channel in order to rotate or somehow
-        # change extrinsic from "world2cam" to "cam2world"
-        Tc = np.linalg.inv(Tc)
 
+        # change extrinsic from "world2cam" to "cam2world"
+        width, height = img.size
+
+        if K == None:
+            K = np.eye(4)
+            # fx    cx
+            #    fy cy
+            #        1 
+            K[0,0] = width
+            K[1,1] = height
+            K[0,2] = width/2.
+            K[1,2] = height/2.
+        Tc = np.eye(4) if Tc == None else Tc
+
+        Tc = np.linalg.inv(Tc)
+        
         K = torch.from_numpy(K.astype(np.float32))
         Tc = torch.from_numpy(Tc.astype(np.float32))
 
@@ -43,7 +57,6 @@ class RandomTransform(object):
         rotation = (random.random() - 0.5) * np.deg2rad(self.max_rotation)
         ration = random.random() * (self.max_scale - self.min_scale) + self.min_scale
 
-        width, height = img.size
         R = torch.Tensor(rodrigues_rotation_matrix(np.array([0, 0, 1]), rotation))
         Tc[0:3, 0:3] = torch.matmul(Tc[0:3, 0:3], R)
         m_scale = height / self.size[0]
@@ -96,6 +109,7 @@ class RandomTransform(object):
             v_map = Image.fromarray(uvmap[:,:,1].astype('float32'), mode = 'F')
 
             # u
+            #  Image.BILINEAR
             u_map = T.functional.rotate(u_map, angle=np.rad2deg(rotation), resample=Image.NEAREST, center=(K[0, 2], K[1, 2]))
             u_map = T.functional.affine(u_map, angle=0, translate=translation, scale=1, shear=0)
             u_map = T.functional.crop(u_map, 0, 0, int(height / ration),
@@ -104,6 +118,7 @@ class RandomTransform(object):
             u_map = T.functional.to_tensor(u_map)
 
             # v
+            #  Image.BILINEAR
             v_map = T.functional.rotate(v_map, angle=np.rad2deg(rotation), resample=Image.NEAREST, center=(K[0, 2], K[1, 2]))
             v_map = T.functional.affine(v_map, angle=0, translate=translation, scale=1, shear=0)
             v_map = T.functional.crop(v_map, 0, 0, int(height / ration),

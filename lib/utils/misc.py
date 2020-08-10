@@ -33,7 +33,7 @@ def interpolate_bilinear_inv(img, sub_u, sub_v, texture_size):
     u_cur = torch.clamp(u_cur, 0, texture_size - 1)
     v_cur = torch.clamp(v_cur, 0, texture_size - 1)
 
-    output[coord_n, :, u_cur, v_cur] = img[coord_n, :, coord_x, coord_y]
+    output[coord_n, :, v_cur, u_cur] = img[coord_n, :, coord_x, coord_y]
 
     return output.permute(0,2,3,1)
 

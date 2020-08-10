@@ -132,31 +132,38 @@ class TextureMapper(nn.Module):
                 print(neural_tex.shape)
                 print(self.textures[0].shape)
                 raise ValueError('Input nerual tex shape is not equal to max size of textures')
-            self.textures[0] = torch.nn.Parameter(neural_tex.permute((0,2,3,1)))
-                    
+            # self.textures[0] = torch.nn.Parameter(neural_tex.permute((0,2,3,1)))
+            self.textures[0].data = neural_tex.permute((0,2,3,1))
+            
         for ithLevel in range(self.mipmap_level):
             texture_size_i = self.textures_size[ithLevel]
             texture_i = self.textures[ithLevel]
+            # texture_i = neural_tex.permute((0,2,3,1))
+            ############################################################################
+            # vertex texcoords map in [-1, 1]
+            grid_uv_map = uv_map * 2. - 1.
+            grid_uv_map[..., -1] = -grid_uv_map[..., -1] # flip v
 
-            # # vertex texcoords map in [-1, 1]
-            # grid_uv_map = uv_map * 2 - 1
+            # sample from texture (bilinear)
+            texture_batch = [texture_i for ib in range(grid_uv_map.shape[0])]
+            texture_batch = torch.cat(tuple(texture_batch), dim = 0)
+
+            if ithLevel == 0:
+                output = torch.nn.functional.grid_sample(texture_batch.permute(0, 3, 1, 2), grid_uv_map, mode='bilinear', padding_mode='zeros') # , align_corners=False
+            else:
+                output = output + torch.nn.functional.grid_sample(texture_i.permute(0, 3, 1, 2), grid_uv_map, mode='bilinear', padding_mode='zeros') # , align_corners=False
+            # [N, C, H, W]
+            ############################################################################
+            # # vertex texcoords map in unit of texel
+            # uv_map_unit_texel = (uv_map * (texture_size_i - 1))
+            # uv_map_unit_texel[..., -1] = texture_size_i - 1 - uv_map_unit_texel[..., -1]
 
             # # sample from texture (bilinear)
             # if ithLevel == 0:
-            #     output = torch.nn.functional.grid_sample(texture_i.permute(0, 3, 1, 2), grid_uv_map, mode='bilinear', padding_mode='zeros') # , align_corners=False
+            #     output = misc.interpolate_bilinear(texture_i[0, :], uv_map_unit_texel[..., 0], uv_map_unit_texel[..., 1]).permute((0, 3, 1, 2)) # [N, C, H, W]
             # else:
-            #     output = output + torch.nn.functional.grid_sample(texture_i.permute(0, 3, 1, 2), grid_uv_map, mode='bilinear', padding_mode='zeros') # , align_corners=False
-            # # [N, C, H, W]
-
-            # vertex texcoords map in unit of texel
-            uv_map_unit_texel = (uv_map * (texture_size_i - 1))
-            uv_map_unit_texel[..., -1] = texture_size_i - 1 - uv_map_unit_texel[..., -1]
-
-            # sample from texture (bilinear)
-            if ithLevel == 0:
-                output = misc.interpolate_bilinear(texture_i[0, :], uv_map_unit_texel[..., 0], uv_map_unit_texel[..., 1]).permute((0, 3, 1, 2)) # [N, C, H, W]
-            else:
-                output = output + misc.interpolate_bilinear(texture_i[0, :], uv_map_unit_texel[..., 0], uv_map_unit_texel[..., 1]).permute((0, 3, 1, 2)) # [N, C, H, W]
+            #     output = output + misc.interpolate_bilinear(texture_i[0, :], uv_map_unit_texel[..., 0], uv_map_unit_texel[..., 1]).permute((0, 3, 1, 2)) # [N, C, H, W]
+            ############################################################################
 
         # apply spherical harmonics
         if self.apply_sh and sh_basis_map is not None:
@@ -187,8 +194,8 @@ class Rasterizer(nn.Module):
 
         super(Rasterizer, self).__init__()
 
-        img_size = cfg.DATASET.OUTPUT_SIZE[0],
-        camera_mode = cfg.DATASET.CAM_MODE,
+        img_size = cfg.DATASET.OUTPUT_SIZE[0]
+        camera_mode = cfg.DATASET.CAM_MODE
 
         # load obj
         #v_attr, f_attr = []
@@ -352,18 +359,20 @@ class RenderingModule(nn.Module):
                  dropout_prob = 0.1,
                  nf0 = nf0,
                  norm = nn.InstanceNorm2d,
-                 # norm = nn.BatchNorm2d, chenxin 200803 temporary change for debug
+                #  norm = nn.BatchNorm2d,# chenxin 200803 temporary change for debug
                  max_channels = 8 * nf0,
                  num_down = num_down_unet,
                  out_channels_gcn = out_channels_gcn,
                  use_gcn = use_gcn,
                  outermost_highway_mode = outermost_highway_mode)
 
-        self.tanh = nn.Tanh()
+        # self.tanh = nn.Tanh()
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, input, v_fea):
         x = self.net(input, v_fea)
-        return self.tanh(x)
+        # return self.tanh(x)
+        return self.sigmoid(x)
 
 class FeatureModule(nn.Module):
     def __init__(self,
@@ -389,14 +398,15 @@ class FeatureModule(nn.Module):
                  dropout_prob = 0.1,
                  nf0 = nf0,
                  norm = nn.InstanceNorm2d,
-                 # norm = nn.BatchNorm2d, # chenxin 200803  temporaray for debug
+                #  norm = nn.BatchNorm2d, # chenxin 200803  temporaray for debug
                  max_channels = 8 * nf0,
                  num_down = num_down_unet,
                  out_channels_gcn = out_channels_gcn,
                  use_gcn = use_gcn,
                  outermost_highway_mode = outermost_highway_mode)
 
-        self.tanh = nn.Tanh()
+        # self.tanh = nn.Tanh()
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, orig_texs, neural_tex, v_fea = None):
         '''
@@ -413,7 +423,8 @@ class FeatureModule(nn.Module):
 
         # average each batch
         x_mean = torch.mean(x, dim=0, keepdim=True)
-        return self.tanh(x_mean)
+        # return self.tanh(x_mean)
+        return self.sigmoid(x_mean)
 
 class DenseDeepGCN(torch.nn.Module):
     def __init__(self, opt):

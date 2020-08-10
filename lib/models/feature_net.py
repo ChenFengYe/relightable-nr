@@ -5,8 +5,10 @@ from lib.utils import util
 
 from utils.encoding import DataParallelModel
 
-class FeatureNet:
+class FeatureNet(torch.nn.Module):
     def __init__(self, cfg):
+        super(FeatureNet, self).__init__()
+
         self.cfg = cfg
         # texture creater
         self.texture_creater = network.TextureCreater(texture_size = cfg.MODEL.TEX_CREATER.NUM_SIZE,
@@ -32,11 +34,11 @@ class FeatureNet:
         # interpolater
         #interpolater = network.Interpolater()
 
-        texture_mapper_module = self.texture_mapper
-        feature_module = self.feature_module
-        render_module = self.render_module
+        tex_size = cfg.MODEL.TEX_CREATER.NUM_SIZE
+        tex_num_ch = cfg.MODEL.TEX_CREATER.NUM_CHANNELS
+        self.orig_tex = torch.ones(1, tex_size, tex_size, tex_num_ch, dtype = torch.float32)
 
-        self.part_list = [feature_module, texture_mapper_module, render_module]     # collect all networks
+        self.part_list = [self.feature_module, self.texture_mapper, self.render_module]     # collect all networks
         self.part_name_list = ['feature_module','texture_mapper', 'render_module']
 
     def init_rasterizer(self, obj_data, global_RT):
@@ -51,17 +53,17 @@ class FeatureNet:
         uv_map = []            
         alpha_map = []
         # raster module
-        frame_idxs = view_trgt[0]['f_idx'].numpy()
+        frame_idxs = view_trgt['f_idx'].numpy()
         for batch_idx, frame_idx in enumerate(frame_idxs):
-            obj_path = view_trgt[0]['obj_path'][batch_idx]
+            obj_path = view_trgt['obj_path'][batch_idx]
             if cur_obj_path != obj_path:
                 cur_obj_path = obj_path
                 obj_data = objs[frame_idx]
                 self.rasterizer.update_vs(obj_data['v_attr'])
 
-            proj = view_trgt[0]['proj'].cuda()[batch_idx, ...]
-            pose = view_trgt[0]['pose'].cuda()[batch_idx, ...]
-            dist_coeffs = view_trgt[0]['dist_coeffs'].cuda()[batch_idx, ...]
+            proj = view_trgt['proj'].cuda()[batch_idx, ...]
+            pose = view_trgt['pose'].cuda()[batch_idx, ...]
+            dist_coeffs = view_trgt['dist_coeffs'].cuda()[batch_idx, ...]
             uv_map_single, alpha_map_single, _, _, _, _, _, _, _, _, _, _, _, _ = \
                 self.rasterizer(proj = proj[None, ...], 
                             pose = pose[None, ...], 
@@ -80,37 +82,22 @@ class FeatureNet:
     def load_checkpoint(self, checkpoint_path = None):
         if checkpoint_path:
             print(' Checkpoint_path : %s'%(checkpoint_path))
-            # util.custom_load([feature_module, texture_mapper, render_module], ['feature_module', 'texture_mapper', 'render_module'], checkpoint_path)
             util.custom_load(self.part_list, self.part_name_list, checkpoint_path)
+            # util.custom_load(self.part_list, self.part_name_list, checkpoint_path)
         else:
             print(' Not load params. ')
 
     def save_checkpoint(self, checkpoint_path):
-        util.custom_save(checkpoint_path, 
-                        self.part_list, 
-                        self.part_name_list)                        
+        util.custom_save(checkpoint_path,  self.part_list, self.part_name_list)                        
 
     def set_parallel(self, gpus):
-        self.rasterizer.cuda()
+        if hasattr(self, 'rasterizer'):
+            self.rasterizer.cuda()
+        self.texture_creater.cuda()
+        self.feature_module.cuda()
         self.texture_mapper.cuda()
         self.render_module.cuda()
         #interpolater.cuda()
-
-        # use multi-GPU
-        if len(gpus) > 1:
-            print('Using multi gpus ' + str(gpus))
-            self.texture_creater = DataParallelModel(self.texture_creater)
-            self.texture_mapper = DataParallelModel(self.texture_mapper)
-            self.feature_module = DataParallelModel(self.feature_module)
-            self.render_module = DataParallelModel(self.render_module)
-            #interpolater = DataParallelModel(interpolater)
-
-            self.texture_mapper_module = self.texture_mapper.module
-            self.feature_module = self.feature_module.module
-            self.render_module = self.render_module.module
-            
-            self.rasterizer = DataParallelModel(self.rasterizer)
-            self.rasterizer = self.rasterizer.module
 
     def set_mode(self, is_train = True):
         if is_train:
@@ -119,7 +106,8 @@ class FeatureNet:
             self.texture_mapper.train()
             self.feature_module.train()
             self.render_module.train()
-            self.rasterizer.eval()      # not train now
+            if hasattr(self, 'rasterizer'):
+                self.rasterizer.eval()      # not train now
             #self.interpolater.train()
 
             print(" number of generator parameters:")
@@ -133,22 +121,42 @@ class FeatureNet:
             pass
     
     def get_atalas(self):
-        return self.texture_mapper_module.textures[0].clone().detach().cpu().permute(0,3,1,2)[:, 0:3, :, :]
+        atlas_nr = self.texture_mapper.textures[0].clone().detach().cpu().permute(0,3,1,2)[:, 0:3, :, :]
+        atlas_orig = self.orig_tex.clone().detach().cpu().permute(0,3,1,2)
+        atlas = torch.cat((atlas_nr, atlas_orig),dim = 0)
+        return atlas
 
-    def forward(self, uv_map, img_gt=None):
-        # create texture
-        orig_tex = self.texture_creater(img_gt, uv_map)
+    def get_neural_img(self):
+        return self.neural_img
 
-        # rendering module
-        neural_tex = self.feature_module(orig_tex, self.texture_mapper_module.textures[0], None)
+    def forward(self, uv_map, img_gt=None, alpha_map=None, ROI=None):
+
+        neural_tex = None
+
+        if img_gt is not None:
+            # create texture
+            self.orig_tex = self.texture_creater(img_gt, uv_map)
+            # rendering module
+            neural_tex = self.feature_module(self.orig_tex, self.texture_mapper.textures[0], None)
 
         # sample texture
-        neural_img = self.texture_mapper(uv_map = uv_map, neural_tex = neural_tex)
+        self.neural_img = self.texture_mapper(uv_map = uv_map, neural_tex = neural_tex)
 
         # rendering module
-        outputs = self.render_module(neural_img, None)
+        outputs = self.render_module(self.neural_img, None)
         # img_max_val = 2.0
         # outputs = (outputs * 0.5 + 0.5) * img_max_val # map to [0, img_max_val]
+
+        if alpha_map is not None:
+            outputs = outputs * alpha_map
+            self.neural_img = outputs * alpha_map
+
+        if ROI is not None:
+            outputs = outputs * ROI
+            self.neural_img = outputs * ROI
+
+        outputs = torch.cat((outputs, self.neural_img), dim = 1)
+
         return outputs
 
     def parameters(self):

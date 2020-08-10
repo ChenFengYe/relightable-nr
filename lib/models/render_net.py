@@ -5,6 +5,36 @@ from lib.utils import util
 
 from utils.encoding import DataParallelModel
 
+from pytorch_prototyping.pytorch_prototyping import *
+
+# class RenderNet(torch.nn.Module):
+#     def __init__(self, cfg):
+#         super(RenderNet, self).__init__()
+
+#         self.in_layer = nn.Conv2d(3, 3, 3, bias=True, stride=1)
+
+#         # self.net = Unet(in_channels = 3,
+#         #          out_channels = 3,
+#         #          outermost_linear = True,
+#         #          use_dropout = True,
+#         #          dropout_prob = 0.1,
+#         #          nf0 = cfg.MODEL.RENDER_MODULE.NF0,
+#         #          norm = torch.nn.InstanceNorm2d,
+#         #         #  norm = nn.BatchNorm2d,# chenxin 200803 temporary change for debug
+#         #          max_channels = 8 * cfg.MODEL.RENDER_MODULE.NF0,
+#         #          num_down = cfg.MODEL.RENDER_MODULE.NUM_DOWN,
+#         #          out_channels_gcn = 512,
+#         #          use_gcn = False,
+#         #          outermost_highway_mode = 'concat')
+
+
+#     def forward(self, uv_map):
+#         a = self.in_layer.forward(uv_map)
+#         # a = self.Unet(uv_map)
+#         return a
+#     def load_checkpoint(self, checkpoint_path = None):
+#         pass
+
 class RenderNet(torch.nn.Module):
     def __init__(self, cfg):
         super(RenderNet, self).__init__()
@@ -42,17 +72,17 @@ class RenderNet(torch.nn.Module):
         uv_map = []            
         alpha_map = []
         # raster module
-        frame_idxs = view_trgt[0]['f_idx'].numpy()
+        frame_idxs = view_trgt['f_idx'].numpy()
         for batch_idx, frame_idx in enumerate(frame_idxs):
-            obj_path = view_trgt[0]['obj_path'][batch_idx]
+            obj_path = view_trgt['obj_path'][batch_idx]
             if cur_obj_path != obj_path:
                 cur_obj_path = obj_path
                 obj_data = objs[frame_idx]
                 self.rasterizer.update_vs(obj_data['v_attr'])
 
-            proj = view_trgt[0]['proj'].cuda()[batch_idx, ...]
-            pose = view_trgt[0]['pose'].cuda()[batch_idx, ...]
-            dist_coeffs = view_trgt[0]['dist_coeffs'].cuda()[batch_idx, ...]
+            proj = view_trgt['proj'].cuda()[batch_idx, ...]
+            pose = view_trgt['pose'].cuda()[batch_idx, ...]
+            dist_coeffs = view_trgt['dist_coeffs'].cuda()[batch_idx, ...]
             uv_map_single, alpha_map_single, _, _, _, _, _, _, _, _, _, _, _, _ = \
                 self.rasterizer(proj = proj[None, ...], 
                             pose = pose[None, ...], 
@@ -87,20 +117,6 @@ class RenderNet(torch.nn.Module):
         if hasattr(self, 'rasterizer'):
             self.rasterizer.cuda()
 
-        # use multi-GPU
-        # if len(gpus) > 1:
-        # print('Using multi gpus ' + str(gpus))
-        # self.texture_mapper = DataParallelModel(self.texture_mapper)
-        # self.render_module = DataParallelModel(self.render_module)
-        # #interpolater = DataParallelModel(interpolater)
-
-        # self.texture_mapper_module = self.texture_mapper.module
-        # self.render_module = self.render_module.module
-        
-        if hasattr(self, 'rasterizer'):
-            self.rasterizer = self.rasterizer.module
-            # self.rasterizer = DataParallelModel(self.rasterizer)
-
     def set_mode(self, is_train = True):
         if is_train:
             # set to training mode
@@ -121,9 +137,8 @@ class RenderNet(torch.nn.Module):
     
     def get_atalas(self):
         texture_mapper_module = self.texture_mapper
-        if type(self.texture_mapper) == DataParallelModel:
-            texture_mapper_module = self.texture_mapper.module
-
+        # if type(self.texture_mapper) == DataParallelModel:
+        #     texture_mapper_module = self.texture_mapper.module
         return texture_mapper_module.textures[0].clone().detach().cpu().permute(0,3,1,2)[:, 0:3, :, :]
 
     def forward(self, uv_map, img_gt=None, alpha_map=None, ROI=None):
@@ -132,15 +147,18 @@ class RenderNet(torch.nn.Module):
 
         # rendering module
         outputs = self.render_module(neural_img, None)
+        
         # img_max_val = 2.0
         # outputs = (outputs * 0.5 + 0.5) * img_max_val # map to [0, img_max_val]
 
         if alpha_map is not None:
             outputs = outputs * alpha_map
+            neural_img = outputs * alpha_map
 
         if ROI is not None:
             outputs = outputs * ROI
-        
+            neural_img = outputs * ROI
+        outputs = torch.cat((outputs, neural_img), dim = 1)
         return outputs
 
     def parameters(self):
