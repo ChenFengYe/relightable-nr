@@ -110,11 +110,11 @@ _C.TRAIN.GAMMA = 1.0
 _C.TRAIN.SHUFFLE = True
 _C.TRAIN.VAL_FREQ = -1                          # Test on validation data every X iterations
 _C.TRAIN.LR = 0.001 
-# _C.TRAIN.LR_FACTOR = 0.1
-# _C.TRAIN.LR_STEP = [90, 110]
-# _C.TRAIN.OPTIMIZER = 'adam'
-# _C.TRAIN.MOMENTUM = 0.9
-# _C.TRAIN.WD = 0.0001
+_C.TRAIN.LR_FACTOR = 0.1
+_C.TRAIN.LR_STEP = [90, 110]
+_C.TRAIN.OPTIMIZER = 'adam'
+_C.TRAIN.MOMENTUM = 0.9
+_C.TRAIN.WD = 0.0001
 
 _C.LOSS = CN()
 _C.LOSS.WEIGHT_HSV = 0.1

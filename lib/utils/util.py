@@ -31,6 +31,7 @@ def create_logger(cfg, cfg_path):
                             '_' + cfg.DATASET.ROOT.strip('/').split('/')[-1])
     # check whether to resume
     iter = 0
+    epoch = cfg.TRAIN.BEGIN_EPOCH
     if cfg.TRAIN.EXP_NAME is not '':
         dir_name += '_' + cfg.TRAIN.EXP_NAME
     if cfg.AUTO_RESUME:
@@ -39,9 +40,7 @@ def create_logger(cfg, cfg_path):
              checkpoint_path = cfg.TRAIN.CHECKPOINT
              dir_name = cfg.TRAIN.CHECKPOINT_DIR
              nums = [int(s) for s in cfg.TRAIN.CHECKPOINT_NAME.split('_') if s.isdigit()]
-             cfg.defrost()
-             cfg.TRAIN.BEGIN_EPOCH = nums[0] + 1
-             cfg.freeze()
+             epoch = nums[0] + 1
              iter = nums[1] + 1
         elif cfg.MODEL.PRETRAINED:
             checkpoint_path = cfg.MODEL.PRETRAIN
@@ -58,7 +57,7 @@ def create_logger(cfg, cfg_path):
     custom_copy(cfg_path, cfgfile_path)
     print("  backup cfg file to " + cfgfile_path)
           
-    return log_dir, iter, checkpoint_path
+    return log_dir, iter, epoch, checkpoint_path
 
 
 def make_gif(input_path, save_path):
@@ -109,7 +108,6 @@ def custom_load(models, names, path, strict = True):
 
     return whole_dict
 
-
 def custom_save(path, parts, names):
     import torch
 
@@ -127,6 +125,17 @@ def custom_save(path, parts, names):
             whole_dict.update({names[i]: parts[i].state_dict()})
 
     torch.save(whole_dict, path)
+
+def save_checkpoint(states, is_best, output_dir,
+                    filename='checkpoint.pth.tar'):
+    import torch
+    torch.save(states, os.path.join(output_dir, filename))
+
+    if is_best and 'state_dict' in states:
+        torch.save(
+            states['best_state_dict'],
+            os.path.join(output_dir, 'model_best.pth.tar')
+        )
 
 ##################################################
 # Utility function for rotation matrices - from https://github.com/akar43/lsm/blob/b09292c6211b32b8b95043f7daf34785a26bce0a/utils.py #####

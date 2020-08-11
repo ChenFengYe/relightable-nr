@@ -32,7 +32,7 @@ def main():
     update_config(cfg, args)
 
     print("Setup Log ...")
-    log_dir, iter_init, checkpoint_path = create_logger(cfg, args.cfg)
+    log_dir, iter_init, epoch_begin, checkpoint_path = create_logger(cfg, args.cfg)
     print(args)
     print(cfg)
     print("*" * 100)
@@ -68,7 +68,6 @@ def main():
     print("*" * 100)
 
     print("Build dataloader ...")
-    # dataset for training views
     if cfg.DATASET.DATASET == 'realdome_cx':
         view_dataset = DomeViewDataset(cfg = cfg, 
                                        root_dir = cfg.DATASET.ROOT,
@@ -96,7 +95,6 @@ def main():
 
     if gpu_count > 1:
         model_net.cuda()
-        # model = model_net
         model = torch.nn.parallel.DistributedDataParallel(
             model_net, device_ids=list(cfg.GPUS)
             #, find_unused_parameters = True
@@ -106,14 +104,26 @@ def main():
 
     # Loss
     criterion = MultiLoss(cfg)
-    # criterion_parall = DataParallelCriterion(criterion)
     criterion.cuda()
 
     # Optimizer
+    ####################################################################
+    # todo
     optimizerG = torch.optim.Adam(model_net.parameters(), lr = cfg.TRAIN.LR)
-
-    print('Loading Model...')
-    model_net.load_checkpoint(checkpoint_path)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizerG, cfg.TRAIN.LR_STEP, cfg.TRAIN.LR_FACTOR,
+        last_epoch=epoch_begin
+    )
+    print('Loading Checkpoint...')
+    ####################################################################
+    # todo
+    if checkpoint_path:
+        checkpoint = torch.load(checkpoint_file, map_location='cpu')
+        iter_init = checkpoint['iter']
+        epoch_begin = checkpoint['epoch']
+        optimizerG.load_state_dict(checkpoint['optimizer'])
+        model_net.load_state_dict(checkpoint['state_dict'])
+        print(' Load checkpoint path from %s'%(checkpoint_path))
 
     print('Start buffering data for training...')
     view_dataloader = DataLoader(view_dataset,
@@ -125,27 +135,26 @@ def main():
     view_dataset.buffer_all()
     writer = SummaryWriter(log_dir)
 
-    # Init Rasterizer
+    # Activate some model parts
     if cfg.DATASET.DATASET == 'realdome_cx':
         view_data = view_dataset.read_view(0)
         cur_obj_path = view_data['obj_path']        
         frame_idx = view_data['f_idx']
         obj_data = view_dataset.objs[frame_idx]
-
         model_net.init_rasterizer(obj_data, view_dataset.global_RT)
-
     if type(model_net) == MergeNet:
         imgs, uv_maps = view_dataset.get_all_view()
         model_net.init_all_atlas(imgs, uv_maps)
+
+    
+    print('Begin training...')
+    model.train()
     # model_net.set_mode(is_train = True)
     # model = DataParallelModel(model_net)
     # model.cuda()
-    
-    model.train()
 
-    print('Begin training...')
     iter = iter_init    
-    for epoch in range(cfg.TRAIN.BEGIN_EPOCH, cfg.TRAIN.END_EPOCH):
+    for epoch in range(epoch_begin, cfg.TRAIN.END_EPOCH):
         for view_trgt in view_dataloader:
             start = time.time()
 
@@ -199,6 +208,7 @@ def main():
             optimizerG.zero_grad()
             loss_g.backward()
             optimizerG.step()
+            lr_scheduler.step()
 
             # chcek gradiant
             if iter == iter_init:
@@ -267,8 +277,8 @@ def main():
 
             if iter % cfg.LOG.CHECKPOINT_FREQ == 0:
                 model_net.save_checkpoint(os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter)))
-                scipy.io.savemat('/data/NFS/new_disk/chenxin/relightable-nr/data/densepose_cx/logs/dnr/tmp/neural_img_epoch_%d_iter_%s_.npy'% (epoch, iter), {"neural_tex": model_net.neural_tex.cpu().clone().detach().numpy()})
-                model_net
+                # scipy.io.savemat('/data/NFS/new_disk/chenxin/relightable-nr/data/densepose_cx/logs/dnr/tmp/neural_img_epoch_%d_iter_%s_.npy'% (epoch, iter), {"neural_tex": model_net.neural_tex.cpu().clone().detach().numpy()})
+                # model_net
 
             end = time.time()
             log_time = datetime.datetime.now().strftime('%m/%d') + '_' + datetime.datetime.now().strftime('%H:%M:%S') 
@@ -284,7 +294,18 @@ def main():
                      err_metrics_batch_i['psnr_valid_mean'], 
                      end - start))
 
-    model_net.save_checkpoint(os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter)))
+    final_output_dir = os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter))
+    is_best_model = False
+    save_checkpoint({
+        'epoch': epoch + 1,
+        'iter' iter + 1,
+        'model': cfg.MODEL.NAME,
+        'state_dict': model.state_dict(),
+        'atlas': atlas,
+        'optimizer': optimizerG.state_dict(),
+        # 'best_state_dict': model.module.state_dict(),
+        # 'perf': perf_indicator,
+    }, is_best_model, final_output_dir)
 
 if __name__ == '__main__':
     main()

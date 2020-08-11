@@ -3,9 +3,8 @@ import torch
 from lib.models import network
 from lib.utils import util
 
-from utils.encoding import DataParallelModel
-
 from pytorch_prototyping.pytorch_prototyping import *
+from collections import OrderedDict
 
 class RenderNet(torch.nn.Module):
     def __init__(self, cfg):
@@ -73,17 +72,29 @@ class RenderNet(torch.nn.Module):
         # alpha_map = alpha_map * torch.tensor(img_gt[0][:,0,:,:][:,None,:,:] <= (2.0 * 255)).permute(0,2,1,3).to(alpha_map.dtype).to(alpha_map.device)
         return uv_map, alpha_map, cur_obj_path
 
-    def load_checkpoint(self, checkpoint_path = None):
-        if checkpoint_path:
-            print(' Checkpoint_path : %s'%(checkpoint_path))
-            util.custom_load(self.part_list, self.part_name_list, checkpoint_path)
-        else:
-            print(' Not load params. ')
+    # def load_checkpoint(self, checkpoint_path = None):
+    #     if checkpoint_path:
+    #         print(' Checkpoint_path : %s'%(checkpoint_path))
+    #         util.custom_load(self.part_list, self.part_name_list, checkpoint_path)
+    #     else:
+    #         print(' Not load params. ')
 
-    def save_checkpoint(self, checkpoint_path):
-        util.custom_save(checkpoint_path, 
-                        self.part_list, 
-                        self.part_name_list)                        
+    # def save_checkpoint(self, checkpoint_path):
+    #     util.custom_save(checkpoint_path, 
+    #                     self.part_list, 
+    #                     self.part_name_list)                        
+
+    def load_state_dict(self, state_dict, strict = True):
+        for name, module in zip(self.part_list, self.part_name_list):          
+            new_state_dict = OrderedDict()
+            for param_name, param_v in state_dict[name].items():
+                new_state_dict[param_name] = param_v
+            module.load_state_dict(new_state_dict, strict = strict)
+
+    def state_dict(self):
+        state_dict = {}
+        for name, part in zip(self.part_list, self.part_name_list):
+            state_dict[name] = part
 
     def set_parallel(self, gpus):       
         self.texture_mapper.cuda()
