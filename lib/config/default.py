@@ -49,6 +49,8 @@ _C.DATASET.PRELOAD_VIEWS = False
 _C.DATASET.TEX_PATH = ''
 _C.DATASET.UV_PATH = ''                 # Preset uv for all frame
 
+_C.DATASET.UV_CONVERTER = './data/UVTextureConverter/densepose_to_SMPL_fix.npy'                 # Preset uv for all frame
+
 # Relight params
 _C.DATASET.LIGHTING_IDX = 0
 # Training data augmentation
@@ -94,6 +96,8 @@ _C.MODEL.RENDER_MODULE.NF0 = 64            # Number of features in outermost lay
 _C.MODEL.RENDER_MODULE.NUM_DOWN = 5
 _C.MODEL.RENDER_MODULE.OUTPUT_CHANNELS =3
 _C.MODEL.RENDER_MODULE.NUM_PARAMS = -1
+_C.MODEL.ALIGN_MODULE = CN()
+_C.MODEL.ALIGN_MODULE.MID_CHANNELS = 64
 
 _C.TRAIN = CN()
 _C.TRAIN.EXP_NAME = 'example'

@@ -8,7 +8,7 @@ import datetime
 import _init_paths
 
 from lib.utils.util import create_logger
-from lib.config import cfg,update_config
+from lib.config import cfg, update_config
 
 import scipy.io
 
@@ -64,6 +64,7 @@ def main():
     from lib.dataset.DomeViewDataset import DomeViewDataset
     from lib.dataset.DPViewDataset import DPViewDataset  
 
+    from lib.utils.model import save_checkpoint
     # device = torch.device('cuda: 2'+ str(cfg.GPUS[-1]))
     print("*" * 100)
 
@@ -101,29 +102,26 @@ def main():
         )
     elif gpu_count == 1:
         model = model_net.cuda()
+    optimizerG = torch.optim.Adam(model_net.parameters(), lr = cfg.TRAIN.LR)
+
+    print('Loading Checkpoint...')
+    if checkpoint_path:
+        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        iter_init = checkpoint['iter']
+        epoch_begin = checkpoint['epoch']
+        optimizerG.load_state_dict(checkpoint['optimizer'])
+        model_net.load_state_dict(checkpoint['state_dict'])
+        print(' Load checkpoint path from %s'%(checkpoint_path))
 
     # Loss
     criterion = MultiLoss(cfg)
     criterion.cuda()
 
     # Optimizer
-    ####################################################################
-    # todo
-    optimizerG = torch.optim.Adam(model_net.parameters(), lr = cfg.TRAIN.LR)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizerG, cfg.TRAIN.LR_STEP, cfg.TRAIN.LR_FACTOR,
-        last_epoch=epoch_begin
+        last_epoch=epoch_begin-1
     )
-    print('Loading Checkpoint...')
-    ####################################################################
-    # todo
-    if checkpoint_path:
-        checkpoint = torch.load(checkpoint_file, map_location='cpu')
-        iter_init = checkpoint['iter']
-        epoch_begin = checkpoint['epoch']
-        optimizerG.load_state_dict(checkpoint['optimizer'])
-        model_net.load_state_dict(checkpoint['state_dict'])
-        print(' Load checkpoint path from %s'%(checkpoint_path))
 
     print('Start buffering data for training...')
     view_dataloader = DataLoader(view_dataset,
@@ -212,6 +210,7 @@ def main():
 
             # chcek gradiant
             if iter == iter_init:
+                print('Checking gradiant in first iteration')
                 for name, param in model.named_parameters(): 
                     if param.grad is None:
                         print(name, True if param.grad is not None else False)
@@ -222,12 +221,12 @@ def main():
                 outputs = torch.cat(outputs, dim = 0)
 
             # get output images
-            neural_img = outputs[:, 3:6, : ,:].clamp(min = 0., max = 1.)
-            outputs = outputs[:, 0:3, : ,:]
-
+            outputs_img = outputs[:, 0:3, : ,:]
+            neural_img = outputs[:, 3:6, : ,:]
+            
             # error metrics
             with torch.no_grad():
-                err_metrics_batch_i = metric.compute_err_metrics_batch(outputs * 255.0, img_gt * 255.0, alpha_map, compute_ssim = False)
+                err_metrics_batch_i = metric.compute_err_metrics_batch(outputs_img * 255.0, img_gt * 255.0, alpha_map, compute_ssim = False)
 
             # tensorboard scalar logs of training data
             writer.add_scalar("loss_g", loss_g, iter)
@@ -242,15 +241,15 @@ def main():
                 atlas = model_net.get_atalas()
 
                 output_final_vs_gt = []
-                output_final_vs_gt.append(outputs.clamp(min = 0., max = 1.))
+                output_final_vs_gt.append(outputs_img.clamp(min = 0., max = 1.))
                 output_final_vs_gt.append(img_gt.clamp(min = 0., max = 1.))
                 output_final_vs_gt.append(neural_img)
-                output_final_vs_gt.append((outputs - img_gt).abs().clamp(min = 0., max = 1.))
-                output_final_vs_gt.append((outputs - img_gt).abs().clamp(min = 0., max = 1.))
+                output_final_vs_gt.append((outputs_img - img_gt).abs().clamp(min = 0., max = 1.))
+                output_final_vs_gt.append((neural_img - outputs_img).abs().clamp(min = 0., max = 1.))
                 output_final_vs_gt = torch.cat(output_final_vs_gt, dim = 0)
                 writer.add_image("output_final_vs_gt",
                                 torchvision.utils.make_grid(output_final_vs_gt,
-                                                            nrow = outputs.shape[0],
+                                                            nrow = outputs_img.shape[0],
                                                             range = (0, 1),
                                                             scale_each = False,
                                                             normalize = False).cpu().detach().numpy(),
@@ -274,10 +273,22 @@ def main():
                                                             normalize = False).cpu().detach().numpy()[:, :, :],
                                                             iter)
             iter += 1
-
+            
             if iter % cfg.LOG.CHECKPOINT_FREQ == 0:
-                model_net.save_checkpoint(os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter)))
-                # scipy.io.savemat('/data/NFS/new_disk/chenxin/relightable-nr/data/densepose_cx/logs/dnr/tmp/neural_img_epoch_%d_iter_%s_.npy'% (epoch, iter), {"neural_tex": model_net.neural_tex.cpu().clone().detach().numpy()})
+                final_output_dir = os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter))
+                is_best_model = False
+                save_checkpoint({
+                    'epoch': epoch + 1,
+                    'iter': iter + 1,
+                    'model': cfg.MODEL.NAME,
+                    'state_dict': model_net.state_dict(),
+                    'atlas': atlas,
+                    'optimizer': optimizerG.state_dict(),
+                    # 'best_state_dict': model.module.state_dict(),
+                    # 'perf': perf_indicator,
+                }, is_best_model, final_output_dir)
+                # scipy.io.savemat('/data/NFS/new_disk/chenxin/relightable-nr/data/densepose_cx/logs/dnr/tmp/neural_img_epoch_%d_iter_%s_.npy'% (epoch, iter), 
+                # {"neural_tex": model_net.neural_tex.cpu().clone().detach().numpy()})
                 # model_net
 
             end = time.time()
@@ -293,19 +304,6 @@ def main():
                      err_metrics_batch_i['mae_valid_mean'], 
                      err_metrics_batch_i['psnr_valid_mean'], 
                      end - start))
-
-    final_output_dir = os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter))
-    is_best_model = False
-    save_checkpoint({
-        'epoch': epoch + 1,
-        'iter' iter + 1,
-        'model': cfg.MODEL.NAME,
-        'state_dict': model.state_dict(),
-        'atlas': atlas,
-        'optimizer': optimizerG.state_dict(),
-        # 'best_state_dict': model.module.state_dict(),
-        # 'perf': perf_indicator,
-    }, is_best_model, final_output_dir)
 
 if __name__ == '__main__':
     main()

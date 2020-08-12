@@ -121,25 +121,6 @@ def __flip(img, flip):
         return img.transpose(Image.FLIP_LEFT_RIGHT)
     return img
 
-
-# transform densepose IUV to our uv_map
-def TransferDenseposeUV(IUV):
-    U = IUV[:, :, 1]
-    V = IUV[:, :, 2]
-    uv_shape = IUV.shape
-    uv_map = np.zeros((uv_shape[0], uv_shape[1], 2), dtype=np.float64)
-    for i in range(4):
-        for j in range(6):
-            PartInd = 6 * i + j + 1
-            x, y = np.where(IUV[:, :, 0] == PartInd)
-            uv_map[x, y, 0] = 1. / 4. * i + U[x, y] / 4.  # u for y
-            uv_map[x, y, 1] = 1. / 6. * j + (1 - V[x, y]) / 6.  # v for x, flip each sub v-axis
-            uv_map[x, y, 1] = 1 - uv_map[x, y, 1]  # flip back whole v-axis
-    uv_map[uv_map >= 1.0] = 1 - 1e-5
-    uv_map[uv_map < 0] = 0.
-    return uv_map
-
-
 # interpolate function in our network
 def interpolate_bilinear_np(data, texture_size_i, uv_map):
     '''

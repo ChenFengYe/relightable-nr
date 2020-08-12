@@ -62,11 +62,13 @@ MODEL:
     NUM_DOWN: 5
     OUTPUT_CHANNELS: 3
     NUM_PARAMS: -1
+  ALIGN_MODULE:
+    MID_CHANNELS: 2
 LOSS:
-    WEIGHT_HSV: 0.1  
-    WEIGHT_ATLAS: 0.01
+    WEIGHT_HSV: 1.
+    WEIGHT_ATLAS: 1.
 TRAIN:
-  EXP_NAME: 'align_module'
+  EXP_NAME: 'atlas_newUV_mid_ch2'
   BATCH_SIZE: 3
   BEGIN_EPOCH: 0
   RESUME: False
@@ -79,7 +81,7 @@ TRAIN:
   SHUFFLE: True
   LR: 0.001
   LR_FACTOR: 0.1
-  LR_STEP: [4000, 8000]
+  LR_STEP: [3000, 6000]
   OPTIMIZER: adam
   MOMENTUM: 0.9
   WD: 0.0001

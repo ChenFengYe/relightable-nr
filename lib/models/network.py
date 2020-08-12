@@ -470,7 +470,8 @@ class RenderingModule(nn.Module):
         self.net = Unet(in_channels = in_channels,
                  out_channels = out_channels,
                  outermost_linear = True,
-                 use_dropout = True,
+                 use_dropout = False,
+                #  use_dropout = True,
                  dropout_prob = 0.1,
                  nf0 = nf0,
                  norm = nn.InstanceNorm2d,
@@ -509,7 +510,8 @@ class FeatureModule(nn.Module):
         self.net = Unet(in_channels = in_channels,
                  out_channels = out_channels,
                  outermost_linear = True,
-                 use_dropout = True,
+                 use_dropout = False,
+                #  use_dropout = True,
                  dropout_prob = 0.1,
                  nf0 = nf0,
                  norm = nn.InstanceNorm2d,
@@ -993,11 +995,12 @@ class LightingLP(nn.Module):
 ##########################################################################################################################
 
 class AlignModule(nn.Module):
-    def __init__(self, input_channels, ref_channels, out_channels):
+    def __init__(self, input_channels, ref_channels, mid_channels, out_channels):
         super(AlignModule, self).__init__()
-        self.down_h = nn.Conv2d(input_channels, out_channels, 1, bias=False)
-        self.down_l = nn.Conv2d(ref_channels, out_channels, 1, bias=False)
-        self.flow_make = nn.Conv2d(out_channels*2, 2, kernel_size=3, padding=1, bias=False)
+        self.down_h = nn.Conv2d(input_channels, mid_channels, 1, bias=False)
+        self.down_l = nn.Conv2d(ref_channels, mid_channels, 1, bias=False)
+        # self.down_m = nn.Conv2d(mid_channels, out_channels, 1, bias=False)
+        self.flow_make = nn.Conv2d(mid_channels*2, 2, kernel_size=3, padding=1, bias=False)
 
     def forward(self, input, ref):
         '''
@@ -1007,11 +1010,11 @@ class AlignModule(nn.Module):
         h, w = ref.size()[2:]
         size = (h, w)
         ref = self.down_l(ref)
-        input= self.down_h(input)
+        input = self.down_h(input)
         # input = F.interpolate(input,size=size, mode="bilinear", align_corners=False)
         flow = self.flow_make(torch.cat([input, ref], 1))
         input = self.flow_warp(input_orign, flow, size=size)
-
+        # input = self.down_m(input)
         return input
 
     def flow_warp(self, input, flow, size):

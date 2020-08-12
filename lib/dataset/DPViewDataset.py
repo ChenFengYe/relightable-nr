@@ -3,8 +3,9 @@ import numpy as np
 
 from PIL import Image
 import scipy.io
-from dataset.data_util_densepose.data_util import get_params, get_transform, TransferDenseposeUV, is_image_file
+from dataset.data_util_densepose.data_util import get_params, get_transform, is_image_file
 from dataset.data_util_densepose.transform import RandomTransform
+from dataset.data_util_densepose.uv_converter import TransferDenseposeUV, UVConverter
 
 import torch
 import torchvision.transforms as T
@@ -64,19 +65,20 @@ class DPViewDataset():
                     self.img_names.append(cfg.DATASET.IMG_DIR % frame_idx)
             else:
                 for x in os.listdir(self.uvmap_dir):
-                    if(x[-4:] == '.mat') and (x[9:11] == '01') :
+                    if(x[-4:] == '.mat'):
+                    # if(x[-4:] == '.mat') and (x[9:11] == '01') :
                         self.img_names.append(x)
 
             self.img_names = sorted(self.img_names)
             print("image names", self.img_names)
         if cfg.VERBOSE:
             print("image names", self.img_names)
-
-        self.transform = RandomTransform(cfg.DATASET.OUTPUT_SIZE,
-                                            cfg.DATASET.MAX_SHIFT,
-                                            cfg.DATASET.MAX_SCALE,
-                                            cfg.DATASET.MAX_ROTATION,
-                                            is_train)
+        self.transform = RandomTransform(size = cfg.DATASET.OUTPUT_SIZE,
+                                         max_shift = cfg.DATASET.MAX_SHIFT,
+                                         max_scale = cfg.DATASET.MAX_SCALE,
+                                         max_rotation = cfg.DATASET.MAX_ROTATION,
+                                         isTrain = is_train)
+        self.uv_converter = UVConverter(cfg.DATASET.UV_CONVERTER)
     def __len__(self):
         return len(self.img_names)
 
@@ -94,7 +96,8 @@ class DPViewDataset():
             imgs[idx, ...] = img
 
             uvmap = scipy.io.loadmat(uvmap_path)['uv_map']
-            uvmap = TransferDenseposeUV(uvmap)
+            # uvmap = TransferDenseposeUV(uvmap)
+            uvmap = self.uv_converter(uvmap)
             uvmap = uvmap - np.floor(uvmap)
             uvmap = torch.tensor(uvmap.astype(np.float32))
             uvmaps[idx, ...] = uvmap
@@ -119,7 +122,8 @@ class DPViewDataset():
             img = Image.open(img_path)
 
             uvmap = scipy.io.loadmat(uvmap_path)['uv_map']
-            uvmap = TransferDenseposeUV(uvmap)
+            # uvmap = TransferDenseposeUV(uvmap)
+            uvmap = self.uv_converter(uvmap)
             # w, h = uvmap.shape[:2]
             # uvmap_3channel = np.concatenate([uvmap, np.zeros([w, h, 1])], axis=2) * 255
             # uvmap = Image.fromarray(uvmap_3channel.astype('uint8'))
@@ -163,6 +167,7 @@ class DPViewDataset():
                 raise ValueError('Not exist uvmap ...' + uvmap_path)
 
             uvmap = scipy.io.loadmat(uvmap_path)['uv_map']
+            # uvmap = self.uv_converter(uvmap)
             uvmap = TransferDenseposeUV(uvmap)
 
             _, _, uvmap, _, _ = self.transform(img=None, mask=None, uvmap=uvmap)

@@ -64,6 +64,7 @@ def main():
     from lib.models import metric
     from lib.models.render_net import RenderNet
     from lib.models.feature_net import FeatureNet
+    from lib.models.merge_net import MergeNet
 
     from utils.encoding import DataParallelModel
 
@@ -85,8 +86,7 @@ def main():
                                        is_train = False,
                                        )
     elif cfg.DATASET.DATASET == 'densepose':
-        view_dataset = DPViewDataset(cfg = cfg, 
-                                     is_train = False)
+        view_dataset = DPViewDataset(cfg = cfg, is_train = False)
     # view_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg)
     print("*" * 100)
 
@@ -110,12 +110,13 @@ def main():
 
         model_net.init_rasterizer(obj_data, view_dataset.global_RT)
 
-    model_net.set_parallel(cfg.GPUS)
-    model_net.set_mode(is_train = True)
+    # model_net.set_parallel(cfg.GPUS)
+    # model_net.set_mode(is_train = True)
     model = model_net
     # model = DataParallelModel(model_net)
     model.cuda()
-
+    model.train()
+    # ???????
     print('Begin inference...')
     inter = 0
     with torch.no_grad():
