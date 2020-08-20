@@ -23,8 +23,8 @@ _C.OUTPUT_DIR = ''
 # _C.DATA_DIR = ''
 
 _C.LOG = CN()
-_C.LOG.CFG_NAME = 'config_name.yaml' # TO-DO                  
-_C.LOG.LOG_DIR = 'log' # TO-DO                  
+_C.LOG.CFG_NAME = 'config_name.yaml'
+_C.LOG.LOG_DIR = 'log'
 _C.LOG.LOGGING_ROOT = ''                # Path to directory where to write tensorboard logs and checkpoints
 _C.LOG.PRINT_FREQ = 100
 _C.LOG.CHECKPOINT_FREQ = 100
@@ -73,9 +73,8 @@ _C.DATASET.FLIP = 0.5
 # common params for NETWORK
 _C.MODEL = CN()
 _C.MODEL.INIT_WEIGHTS = True
-_C.MODEL.NAME = 'dnr_unet_512_tex1024'
-_C.MODEL.NAME = 'dnr_unet_512_tex1024'
-_C.MODEL.SYNC_BN = True
+_C.MODEL.NAME = 'RenderNet'
+# _C.MODEL.SYNC_BN = True
 _C.MODEL.PRETRAINED = ''
 _C.MODEL.TEX_CREATER = CN()
 _C.MODEL.TEX_CREATER.NUM_CHANNELS = 3   # Num of channels for orig texture
@@ -85,14 +84,14 @@ _C.MODEL.TEX_MAPPER.NUM_CHANNELS = 24   # Num of channels for neural texture
 _C.MODEL.TEX_MAPPER.NUM_SIZE = 1024
 _C.MODEL.TEX_MAPPER.MIPMAP_LEVEL = 4    # Mipmap levels for neural texture
 _C.MODEL.TEX_MAPPER.SH_BASIS = True     # Whether apply spherical harmonics to sampled feature maps
-_C.MODEL.TEX_MAPPER.MERGE_TEX = True     # Whether merge texture different training
+_C.MODEL.TEX_MAPPER.MERGE_TEX = True        # Whether merge texture different training
 _C.MODEL.TEX_MAPPER.NUM_PARAMS = -1
 _C.MODEL.FEATURE_MODULE = CN()
 _C.MODEL.FEATURE_MODULE.NF0 = 64            # Number of features in outermost layer of U-Net architectures
 _C.MODEL.FEATURE_MODULE.NUM_DOWN = 5
 _C.MODEL.FEATURE_MODULE.NUM_PARAMS = -1
 _C.MODEL.RENDER_MODULE = CN()
-_C.MODEL.RENDER_MODULE.NF0 = 64            # Number of features in outermost layer of U-Net architectures
+_C.MODEL.RENDER_MODULE.NF0 = 64             # Number of features in outermost layer of U-Net architectures
 _C.MODEL.RENDER_MODULE.NUM_DOWN = 5
 _C.MODEL.RENDER_MODULE.OUTPUT_CHANNELS =3
 _C.MODEL.RENDER_MODULE.NUM_PARAMS = -1
@@ -106,6 +105,7 @@ _C.TRAIN.BEGIN_EPOCH = 0
 _C.TRAIN.RESUME = False
 _C.TRAIN.SAMPLING_PATTERN = 'skipinv_10'         # Sampling of image training sequences_C.TRAIN.CHECKPOINT = ''
 _C.TRAIN.SAMPLING_PATTERN_VAL = 'skip_10'
+_C.TRAIN.SAMPLING_PAIRWISE = False
 _C.TRAIN.CHECKPOINT = ''
 _C.TRAIN.CHECKPOINT_DIR = ''
 _C.TRAIN.CHECKPOINT_NAME = ''
@@ -121,8 +121,10 @@ _C.TRAIN.MOMENTUM = 0.9
 _C.TRAIN.WD = 0.0001
 
 _C.LOSS = CN()
-_C.LOSS.WEIGHT_HSV = 0.1
-_C.LOSS.WEIGHT_ATLAS = 0.01
+_C.LOSS.PERCEPTUALLOSS = "L1"
+_C.LOSS.WEIGHT_PERCEPTUAL = 1.0
+_C.LOSS.WEIGHT_HSV = 1.0
+_C.LOSS.WEIGHT_ATLAS = 1.0
 
 _C.TEST = CN()
 _C.TEST.BATCH_SIZE = 3
@@ -161,6 +163,8 @@ def update_config(cfg, args):
         cfg.TEST.MODEL_PATH = os.path.join(cfg.DATASET.ROOT, cfg.TEST.MODEL_PATH[2:])
     (cfg.TEST.CALIB_DIR, cfg.TEST.CALIB_NAME) = os.path.split(cfg.TEST.CALIB_PATH)
     (cfg.TEST.MODEL_DIR, cfg.TEST.MODEL_NAME) = os.path.split(cfg.TEST.MODEL_PATH)
+    if cfg.TEST.MODEL_DIR == '' or cfg.TEST.MODEL_DIR == './' :
+        (cfg.TEST.MODEL_DIR, _) = os.path.split(args.cfg)        
 
     if cfg.DATASET.IMG_DIR[:2] == '_/':
         cfg.DATASET.IMG_DIR = os.path.join(cfg.DATASET.ROOT, cfg.DATASET.IMG_DIR[2:])

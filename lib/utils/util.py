@@ -26,9 +26,11 @@ class Logger(object):
 
 def create_logger(cfg, cfg_path):
     dir_name = os.path.join(datetime.datetime.now().strftime('%m-%d') + 
-                            '_' + datetime.datetime.now().strftime('%H-%M-%S') +
-                            '_' + cfg.TRAIN.SAMPLING_PATTERN +
-                            '_' + cfg.DATASET.ROOT.strip('/').split('/')[-1])
+                            '_' + datetime.datetime.now().strftime('%H-%M-%S'))
+                            #  +
+                            # '_' + cfg.TRAIN.SAMPLING_PATTERN +
+                            # '_' + cfg.DATASET.ROOT.strip('/').split('/')[-1])
+
     # check whether to resume
     iter = 0
     epoch = cfg.TRAIN.BEGIN_EPOCH
@@ -56,7 +58,20 @@ def create_logger(cfg, cfg_path):
     cfgfile_path = os.path.join(log_dir, cfg.LOG.CFG_NAME)
     custom_copy(cfg_path, cfgfile_path)
     print("  backup cfg file to " + cfgfile_path)
-          
+
+    if cfg.MODEL.NAME == 'RenderNet':
+        netfile_name = 'render_net.py'
+    elif cfg.MODEL.NAME == 'FeatureNet':
+        netfile_name = './lib/models/feature_net.py'
+    elif cfg.MODEL.NAME == 'MergeNet':
+        netfile_name = './lib/models/merge_net.py'
+    else:
+        raise ValueError('Unsupport Network framework!')
+    netfile_path = os.path.join(log_dir, netfile_name)    
+    netfile2_path = os.path.join(log_dir, 'network.py')
+    custom_copy('./lib/models/'+ netfile_name, netfile_path)
+    custom_copy('./lib/models/network.py', netfile2_path)
+    print("  backup network(xx_net.py, network.py) file to " + netfile_path)
     return log_dir, iter, epoch, checkpoint_path
 
 

@@ -607,6 +607,49 @@ class Unet(nn.Module):
         out_layer = self.out_layer(unet)
         return out_layer
 
+class AttentionUnet(Unet):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 nf0,
+                 num_down,
+                 max_channels,
+                 use_dropout,
+                 upsampling_mode='transpose',
+                 dropout_prob=0.1,
+                 norm=nn.BatchNorm2d,
+                 outermost_linear=False,
+                 out_channels_gcn = 512,
+                 use_gcn = True,
+                 outermost_highway_mode = 'no_highway'):
+        super().__init__(in_channels,
+                         out_channels,
+                         nf0,
+                         num_down,
+                         max_channels,
+                         use_dropout,
+                         upsampling_mode='transpose',
+                         dropout_prob=0.1,
+                         norm=nn.BatchNorm2d,
+                         outermost_linear=False,
+                         out_channels_gcn = 512,
+                         use_gcn = True,
+                         outermost_highway_mode = 'no_highway')
+        # attention layer
+        out_channels_att = 1
+        self.out_layer_att = [Conv2dSame(nf0,
+                                        out_channels_att,
+                                        kernel_size=3,
+                                        bias=outermost_linear or (norm is None))]
+
+
+    def forward(self, x, v_fea):
+        in_layer = self.in_layer(x)
+        unet = self.unet_block(in_layer, v_fea)
+        out_layer = self.out_layer(unet)
+        out_layer_att = self.out_layer_att(unet)
+        out = torch.cat((out_layer, out_layer_att), dim=1)
+        return out
 
 class Identity(nn.Module):
     '''Helper module to allow Downsampling and Upsampling nets to default to identity if they receive an empty list.'''

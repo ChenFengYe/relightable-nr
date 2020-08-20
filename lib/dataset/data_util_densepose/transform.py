@@ -13,6 +13,51 @@ from PIL import Image
 
 from utils.util import calc_center, rodrigues_rotation_matrix
 
+def uv_interpolation_single(singlemap, size, transform=None, interpolation=Image.NEAREST):
+    width, height = singlemap.width, singlemap.height
+    if transform is not None:
+        translation = transform['t']
+        rotation = transform['r']
+        ration = transform['s']
+        K = transform['K']
+        singlemap = T.functional.rotate(singlemap, angle=np.rad2deg(rotation), resample=interpolation, center=(K[0, 2], K[1, 2]))
+        singlemap = T.functional.affine(singlemap, angle=0, translate=translation, scale=1, shear=0)
+        singlemap = T.functional.crop(singlemap, 0, 0, int(height / ration), int(height * size[1] / ration / size[0]))
+    singlemap = T.functional.resize(singlemap, size, interpolation)
+    singlemap = T.functional.to_tensor(singlemap)
+    return singlemap
+
+def uv_interpolation_merge(map_linear, map_nearest, window_size):
+    '''
+    window_size means the window size in atlas space
+    '''    
+    # Ignore nonadjacent pixel
+    dists = (map_linear[0, ...]-map_nearest[0, ...])**2 + (map_linear[1, ...]-map_nearest[1, ...])**2
+    mask_val = dists > (window_size**2)
+    map_linear[:, mask_val] = map_nearest[:, mask_val]
+    
+    # Ignore boundary pixel
+    norm = map_nearest[0, ...]**2 + map_nearest[1, ...]**2
+    mask_background = norm == 0
+    map_linear[:, mask_background] = 0
+    
+    return map_linear
+
+def uv_interpolation(uvmap, window_size, size, transform=None):
+    u_map = Image.fromarray(uvmap[:,:,0].astype('float32'), mode = 'F')
+    v_map = Image.fromarray(uvmap[:,:,1].astype('float32'), mode = 'F')
+
+    u_map_linear = uv_interpolation_single(u_map, size, transform, Image.BILINEAR)
+    u_map_nearest = uv_interpolation_single(u_map, size, transform, Image.NEAREST)
+
+    v_map_linear = uv_interpolation_single(v_map, size, transform, Image.BILINEAR)
+    v_map_nearest = uv_interpolation_single(v_map, size, transform, Image.NEAREST)
+    
+    uvmap_linear = torch.cat((u_map_linear, v_map_linear), dim=0)
+    uvmap_nearest = torch.cat((u_map_nearest, v_map_nearest), dim=0)
+    uvmap = uv_interpolation_merge(uvmap_linear, uvmap_nearest, window_size)
+
+    return uvmap
 
 class RandomTransform(object):
     def __init__(self, size, max_shift=0, max_scale=0, max_rotation=0, interpolation=Image.BICUBIC, isTrain=True,
@@ -109,28 +154,10 @@ class RandomTransform(object):
                 mask = T.functional.to_tensor(mask)
 
             if uvmap is not None:
-                u_map = Image.fromarray(uvmap[:,:,0].astype('float32'), mode = 'F')
-                v_map = Image.fromarray(uvmap[:,:,1].astype('float32'), mode = 'F')
-
-                # u
-                #  Image.BILINEAR
-                u_map = T.functional.rotate(u_map, angle=np.rad2deg(rotation), resample=Image.NEAREST, center=(K[0, 2], K[1, 2]))
-                u_map = T.functional.affine(u_map, angle=0, translate=translation, scale=1, shear=0)
-                u_map = T.functional.crop(u_map, 0, 0, int(height / ration),
-                                        int(height * self.size[1] / ration / self.size[0]))
-                u_map = T.functional.resize(u_map, self.size, Image.NEAREST)
-                u_map = T.functional.to_tensor(u_map)
-
-                # v
-                #  Image.BILINEAR
-                v_map = T.functional.rotate(v_map, angle=np.rad2deg(rotation), resample=Image.NEAREST, center=(K[0, 2], K[1, 2]))
-                v_map = T.functional.affine(v_map, angle=0, translate=translation, scale=1, shear=0)
-                v_map = T.functional.crop(v_map, 0, 0, int(height / ration),
-                                        int(height * self.size[1] / ration / self.size[0]))
-                v_map = T.functional.resize(v_map, self.size, Image.NEAREST)
-                v_map = T.functional.to_tensor(v_map)
-
-                uvmap = torch.cat((u_map, v_map), dim=0)
+                transform = {'t':translation,'r':rotation,'s':ration,'K':K}
+                window_rate = 0.06
+                window_size = 1.0*window_rate
+                uvmap = uv_interpolation(uvmap, window_size, self.size, transform)
 
             # K = K / m_scale
             # K[2,2] = 1
@@ -152,25 +179,22 @@ class RandomTransform(object):
 
         # inference
         else:
-            u_map = Image.fromarray(uvmap[:,:,0].astype('float32'), mode = 'F')
-            v_map = Image.fromarray(uvmap[:,:,1].astype('float32'), mode = 'F')
-            ration = 1.0
-            # u
-            #  Image.BILINEAR
-            u_map = T.functional.crop(u_map, 0, 0, int(height / ration),
-                                    int(height * self.size[1] / ration / self.size[0]))
-            u_map = T.functional.resize(u_map, self.size, Image.NEAREST)
-            u_map = T.functional.to_tensor(u_map)
+            if img is not None:
+                img = T.functional.resize(img, self.size, self.interpolation)
+                img = T.functional.to_tensor(img)
 
-            # v
-            #  Image.BILINEAR
-            v_map = T.functional.crop(v_map, 0, 0, int(height / ration),
-                                    int(height * self.size[1] / ration / self.size[0]))
-            v_map = T.functional.resize(v_map, self.size, Image.NEAREST)
-            v_map = T.functional.to_tensor(v_map)
+            if mask is not None:
+                mask_np = np.asarray(mask)
+                if len(mask_np.shape) > 2:
+                    # Just take one channel
+                    mask_np = mask_np[:, :, 0]
+                mask = T.functional.resize(mask, self.size, self.interpolation)
+                mask = T.functional.to_tensor(mask)
 
-            uvmap = torch.cat((u_map, v_map), dim=0)
-
+            window_rate = 0.06
+            window_size = 1.0*window_rate
+            uvmap = uv_interpolation(uvmap, window_size, self.size)
+            
         return img, mask, uvmap, K, Tc
 
     def __repr__(self):

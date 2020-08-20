@@ -8,7 +8,7 @@ import datetime
 import _init_paths
 
 from lib.utils.util import cond_mkdir, make_gif
-from lib.config import cfg,update_config
+from lib.config import cfg, update_config
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -34,7 +34,7 @@ def main():
 
     # print("Setup Log ...")
     log_dir = cfg.TEST.CALIB_DIR.split('/')
-    log_dir = os.path.join(cfg.TEST.MODEL_DIR, cfg.TEST.CALIB_NAME[:-4], 'resol_' + str(cfg.DATASET.OUTPUT_SIZE[0]), log_dir[-2],
+    log_dir = os.path.join(cfg.TEST.MODEL_DIR, cfg.TRAIN.EXP_NAME+'_'+cfg.TEST.CALIB_NAME[:-4]+'_resol_'+str(cfg.DATASET.OUTPUT_SIZE[0])+'_'+log_dir[-2]+'_'+
                            log_dir[-1].split('_')[0] + '_' + log_dir[-1].split('_')[1] + '_' +
                            cfg.TEST.MODEL_NAME.split('-')[-1].split('.')[0])
     cond_mkdir(log_dir)
@@ -77,17 +77,7 @@ def main():
 
     print("Build dataloader ...")
     # dataset for training views
-    if cfg.DATASET.DATASET == 'realdome_cx':
-        view_dataset = DomeViewDataset(cfg = cfg, 
-                                       root_dir = cfg.DATASET.ROOT,
-                                       calib_path = cfg.TEST.CALIB_PATH,
-                                       calib_format = cfg.DATASET.CALIB_FORMAT,
-                                       sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN,
-                                       is_train = False,
-                                       )
-    elif cfg.DATASET.DATASET == 'densepose':
-        view_dataset = DPViewDataset(cfg = cfg, is_train = False)
-    # view_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg)
+    view_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg, is_train=False)
     print("*" * 100)
 
     print('Build Network...')
@@ -95,9 +85,21 @@ def main():
 
     print('Loading Model...')
     checkpoint_path = cfg.TEST.MODEL_PATH
-    model_net.load_checkpoint(checkpoint_path)
+    if os.path.exists(checkpoint_path):
+        pass
+    elif os.path.exists(os.path.join(cfg.TEST.MODEL_DIR, checkpoint_path)):
+        checkpoint_path = os.path.join(cfg.TEST.MODEL_DIR,checkpoint_path)
 
-    print('Start buffering data for training...')
+    # model_net.load_checkpoint(checkpoint_path)
+    if checkpoint_path:
+        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        iter_init = checkpoint['iter']
+        epoch_begin = checkpoint['epoch']
+        model_net.load_state_dict(checkpoint['state_dict'])
+        print(' Load checkpoint path from %s'%(checkpoint_path))
+
+
+    print('Start buffering data for inference...')
     view_dataloader = DataLoader(view_dataset, batch_size = cfg.TEST.BATCH_SIZE, shuffle = False, num_workers = 8)
     view_dataset.buffer_all()
 
@@ -116,7 +118,7 @@ def main():
     # model = DataParallelModel(model_net)
     model.cuda()
     model.train()
-    # ???????
+
     print('Begin inference...')
     inter = 0
     with torch.no_grad():
@@ -127,11 +129,11 @@ def main():
             img_gt = None
 
             # get image 
-            if cfg.DATASET.DATASET == 'realdome_cx':
-                uv_map, alpha_map, cur_obj_path = model.module.project_with_rasterizer(cur_obj_path, view_dataset.objs, view_trgt)
-            elif cfg.DATASET.DATASET == 'densepose':
-                uv_map = view_trgt['uv_map'].permute(0, 2, 3, 1).cuda()
-                # alpha_map = view_trgt['mask'].cuda()
+            # if cfg.DATASET.DATASET == 'realdome_cx':
+            #     uv_map, alpha_map, cur_obj_path = model.module.project_with_rasterizer(cur_obj_path, view_dataset.objs, view_trgt)
+            # elif cfg.DATASET.DATASET == 'densepose':
+            uv_map = view_trgt['uv_map'].cuda()
+            # alpha_map = view_trgt['mask'][:,None,:,:].cuda()
 
             outputs = model.forward(uv_map = uv_map, img_gt = img_gt)
             neural_img = outputs[:, 3:6, : ,:].clamp(min = 0., max = 1.)            

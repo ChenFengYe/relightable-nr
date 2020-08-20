@@ -1,4 +1,7 @@
 import torch
+
+from lib.engine.perceptual_loss import PerceptualLoss
+
 from torch import nn
 from torch.nn import functional as F
 
@@ -8,32 +11,42 @@ class MultiLoss(nn.Module):
         self.w_atlas = cfg.LOSS.WEIGHT_ATLAS
         self.w_hsv = cfg.LOSS.WEIGHT_HSV        
 
-        self.loss_rgb = torch.tensor([0])
-        self.loss_hsv = torch.tensor([0])
-        self.loss_atlas = torch.tensor([0])
+        self.loss_atlas = torch.tensor([0.0])
+        self.loss_rgb = torch.tensor([0.0])
+        self.loss_hsv = torch.tensor([0.0])
+        self.loss = torch.tensor([0.0])
 
         # loss 1 - rgb
-        self.criterionL1 = torch.nn.L1Loss(reduction='mean')
+        # self.criterionL1 = torch.nn.L1Loss(reduction='mean')
+        self.criterionL1_per = PerceptualLoss(cfg)
         # loss 2 - hsv
         self.criterionL1_hsv = HSVLoss()
         # loss 3 - atalas
         self.criterionL1_atlas = TexRGBLoss()
 
     def forward(self, input, target):
-        output_img = input[:,0:3,:,:]
-        self.loss_rgb = self.criterionL1(output_img, target)
-        self.loss_hsv = self.w_hsv * self.criterionL1_hsv(output_img, target)         
+        # atlas_rgb_layer = input[:,3:6,:,:] 
+        # self.loss_atlas = self.w_hsv * self.criterionL1_atlas(atlas_rgb_layer, target)         
+        # loss = self.loss_atlas
 
+        output_img = input[:,0:3,:,:]
+        self.loss_rgb = self.criterionL1_per(output_img, target)
+        # self.loss_hsv = self.w_hsv * self.criterionL1_hsv(output_img, target)         
         if input.shape[1] > 3:
             atlas_rgb_layer = input[:,3:6,:,:] 
-
             self.loss_atlas = self.w_atlas * self.criterionL1_atlas(atlas_rgb_layer, target)         
-            loss = self.loss_rgb + self.loss_hsv + self.loss_atlas
-
+            # loss = self.loss_rgb + self.loss_hsv + self.loss_atlas
+            self.loss = self.loss_rgb + self.loss_atlas
         else:
-            loss = self.loss_rgb + self.loss_hsv
-
-        return loss
+            self.loss = self.loss_rgb + self.loss_hsv
+        return self.loss
+    
+    def loss_list(self): 
+        loss_list ={'Loss':self.loss,
+                    'rgb':self.loss_rgb,
+                    'hsv':self.loss_hsv,
+                    'atlas':self.loss_atlas,}
+        return loss_list
 
 '''
 Create a loss to force the first 3 channel of texture to learn rgb values
@@ -52,7 +65,9 @@ class HSVLoss(nn.Module):
     def __init__(self, h=0, s=1, v=0.7, eps=1e-7, threshold_h=0.03, threshold_sv=0.1):
         super(HSVLoss, self).__init__()
         self.hsv = [h, s, v]
-        self.loss = nn.L1Loss(reduction='none')
+        # self.loss = nn.L1Loss(reduction='none')
+        self.loss = torch.nn.L1Loss(reduction='mean')
+        
         self.eps = eps
 
         # since Hue is a circle (where value 0 is equal to value 1 that are both "red"), 

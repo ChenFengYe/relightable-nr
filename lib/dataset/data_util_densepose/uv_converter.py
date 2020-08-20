@@ -46,7 +46,12 @@ class UVConverter(object):
         id_ = ids[mask].astype(int)
         u_ = (uv[...,0][mask] * densepose_size).astype(int)
         v_ = ((1.0-uv[...,1][mask]) * densepose_size).astype(int)
-        uv[mask,:] = self.densepose_to_SMPL[id_-1, u_, v_, 0:2]
 
+        uv[mask,:] = self.densepose_to_SMPL[id_-1, u_, v_, 0:2]
         uv_map = IUV[..., 1:3].astype(np.float64)
+
+        # change axis
+        uv_map = uv_map[:,:,::-1]
+        uv_map[mask, 1] = 1.0 - uv_map[mask, 1]
+            
         return uv_map

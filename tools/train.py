@@ -8,6 +8,7 @@ import datetime
 import _init_paths
 
 from lib.utils.util import create_logger
+from lib.utils import vis
 from lib.config import cfg, update_config
 
 import scipy.io
@@ -44,7 +45,6 @@ def main():
 
     # import pytorch after set cuda
     import torch
-    import torchvision
 
     from torch.utils.data import DataLoader
     from tensorboardX import SummaryWriter
@@ -69,18 +69,10 @@ def main():
     print("*" * 100)
 
     print("Build dataloader ...")
-    if cfg.DATASET.DATASET == 'realdome_cx':
-        view_dataset = DomeViewDataset(cfg = cfg, 
-                                       root_dir = cfg.DATASET.ROOT,
-                                       calib_path = cfg.DATASET.CALIB_PATH,
-                                       calib_format = cfg.DATASET.CALIB_FORMAT,
-                                       sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN,
-                                       precomp_high_dir = cfg.DATASET.PRECOMP_DIR,
-                                       precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
-                                       preset_uv_path = cfg.DATASET.UV_PATH)
-    elif cfg.DATASET.DATASET == 'densepose':
-        view_dataset = DPViewDataset(cfg = cfg)
-    # view_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg)
+    view_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg, is_train=True)
+    if cfg.TRAIN.VAL_FREQ > 0:
+        print("Build val dataloader ...")
+        view_val_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg, is_train=False)
     print("*" * 100)
 
     print('Build Network...')
@@ -104,7 +96,6 @@ def main():
         model = model_net.cuda()
     optimizerG = torch.optim.Adam(model_net.parameters(), lr = cfg.TRAIN.LR)
 
-    print('Loading Checkpoint...')
     if checkpoint_path:
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
         iter_init = checkpoint['iter']
@@ -131,6 +122,14 @@ def main():
                                  num_workers = cfg.WORKERS,
                                  sampler=DistributedSampler(view_dataset))
     view_dataset.buffer_all()
+    if cfg.TRAIN.VAL_FREQ > 0:
+        print('Start buffering data for validation...')     
+        view_val_dataloader = DataLoader(view_val_dataset, 
+                                         batch_size = cfg.TRAIN.BATCH_SIZE,
+                                         shuffle = False,
+                                         num_workers = cfg.WORKERS,
+                                         sampler=DistributedSampler(view_val_dataset))
+        view_val_dataset.buffer_all()
     writer = SummaryWriter(log_dir)
 
     # Activate some model parts
@@ -145,68 +144,56 @@ def main():
         model_net.init_all_atlas(imgs, uv_maps)
 
     
-    print('Begin training...')
+    print('Begin training...  Log in ' + log_dir)
     model.train()
     # model_net.set_mode(is_train = True)
     # model = DataParallelModel(model_net)
     # model.cuda()
 
-    iter = iter_init    
-    for epoch in range(epoch_begin, cfg.TRAIN.END_EPOCH):
-        for view_trgt in view_dataloader:
-            start = time.time()
+    start = time.time()
+    iter = iter_init
+    for epoch in range(epoch_begin, cfg.TRAIN.END_EPOCH + 1):
+        for view_data in view_dataloader:
+            img_gt = view_data['img'].cuda()
+            # ####################################################################
+            # # all put into forward ?
+            # # 
+            # img_gt = view_trgt['img'].cuda()
+            # # if cfg.DATASET.DATASET == 'DomeViewDataset':
+            # #     uv_map, alpha_map, cur_obj_path = model.module.project_with_rasterizer(cur_obj_path, view_dataset.objs, view_trgt)
+            # #     ROI = view_trgt['ROI'].cuda()
+            # # elif cfg.DATASET.DATASET == 'DomeViewDataset':
+            # uv_map = view_trgt['uv_map'].cuda()
+            # alpha_map = view_trgt['mask'][:,None,:,:].cuda()
+            # ROI = None
+            
+            # outputs = model.forward(uv_map = uv_map,
+            #                         img_gt = img_gt,
+            #                         alpha_map = alpha_map,
+            #                         ROI = ROI)
+            outputs = model.forward(view_data, is_train=True)
 
-            ROI = None
-            img_gt = view_trgt['img'].cuda()
-
-            # get image 
-            if cfg.DATASET.DATASET == 'realdome_cx':
-                uv_map, alpha_map, cur_obj_path = model.module.project_with_rasterizer(cur_obj_path, view_dataset.objs, view_trgt)
-                ROI = view_trgt['ROI'].cuda()
-            elif cfg.DATASET.DATASET == 'densepose':
-                uv_map = view_trgt['uv_map'].cuda()
-                alpha_map = view_trgt['mask'].cuda()
-
-            # # check per iter image
-            # for batch_idx, frame_idx in enumerate(frame_idxs):
-            #     if self.cfg.DEBUG.SAVE_TRANSFORMED_IMG:
-            #         save_dir_img_gt = './Debug/image_mask'
-            #         save_path_img_gt = os.path.join(save_dir_img_gt, '%06d_%03d.png'%(iter, frame_idx))
-            #         cv2.imwrite(save_path_img_gt,  cv2.cvtColor(img_gt[0][batch_idx, ...].cpu().detach().numpy().transpose(1,2,0)*255.0, cv2.COLOR_RGB2BGR))
-            #         #cv2.imwrite(os.path.join(save_dir_img_gt, '%03d_'%frame_idx + img_fn), cv2.cvtColor(img_gt*255.0, cv2.COLOR_BGR2RGB))
-            #         print(' Save img: '+ save_path_img_gt)
-                    
-            #     if self.cfg.DEBUG.SAVE_TRANSFORMED_MASK:
-            #         save_alpha_map = alpha_map.permute(0,2,3,1).cpu().detach().numpy()
-            #         save_dir_mask = './Debug/image_mask'
-            #         save_path_mask = os.path.join(save_dir_mask, '%06d_%03d_mask.png'%(iter, frame_idx))
-            #         cv2.imwrite(save_path_mask, save_alpha_map[batch_idx, ...]*255.0)
-            #         print(' Save mask: '+ save_path_mask)
-
-            outputs = model.forward(uv_map = uv_map,
-                                    img_gt = img_gt,
-                                    alpha_map = alpha_map,
-                                    ROI = ROI)
+            if alpha_map is not None:
+                outputs = outputs * alpha_map
+            if ROI is not None:
+                outputs = outputs * ROI
 
             # ignore loss outside alpha_map and ROI
-            if img_gt is not None:
-                if alpha_map is not None:
-                    img_gt = img_gt * alpha_map
-                if ROI is not None:
-                    img_gt = img_gt * ROI
+            if alpha_map is not None:
+                img_gt = img_gt * alpha_map
+            if ROI is not None:
+                img_gt = img_gt * ROI
 
             # Loss
             loss_g = criterion(outputs, img_gt)
             # loss_g = criterion_parall(outputs, img_gt)
-
-            loss_rn = criterion.loss_rgb
-            loss_rn_hsv = criterion.loss_hsv
-            loss_atlas = criterion.loss_atlas
+            # loss_rn = criterion.loss_rgb
+            # loss_rn_hsv = criterion.loss_hsv
+            # loss_atlas = criterion.loss_atlas
 
             optimizerG.zero_grad()
             loss_g.backward()
             optimizerG.step()
-            lr_scheduler.step()
 
             # chcek gradiant
             if iter == iter_init:
@@ -223,87 +210,134 @@ def main():
             # get output images
             outputs_img = outputs[:, 0:3, : ,:]
             neural_img = outputs[:, 3:6, : ,:]
+            aligned_uv = outputs[:, -2:, : ,:]
+
+            atlas = model_net.get_atalas()
             
-            # error metrics
+            # Metrics
+            log_time = datetime.datetime.now().strftime('%m/%d') + '_' + datetime.datetime.now().strftime('%H:%M:%S') 
             with torch.no_grad():
                 err_metrics_batch_i = metric.compute_err_metrics_batch(outputs_img * 255.0, img_gt * 255.0, alpha_map, compute_ssim = False)
 
-            # tensorboard scalar logs of training data
-            writer.add_scalar("loss_g", loss_g, iter)
-            writer.add_scalar("loss_rn", loss_rn, iter)
-            writer.add_scalar("loss_rn_hsv", loss_rn_hsv, iter)            
-            writer.add_scalar("loss_atlas", loss_atlas, iter)
-            writer.add_scalar("final_mae_valid", err_metrics_batch_i['mae_valid_mean'], iter)
-            writer.add_scalar("final_psnr_valid", err_metrics_batch_i['psnr_valid_mean'], iter)
-
+            # vis
             if not iter % cfg.LOG.PRINT_FREQ:
-                # neural_img = model_net.get_neural_img().clamp(min = 0., max = 1.)
-                atlas = model_net.get_atalas()
+                vis.writer_add_image(writer, iter,epoch,img_gt, outputs_img, neural_img, uv_map, aligned_uv, atlas)
 
-                output_final_vs_gt = []
-                output_final_vs_gt.append(outputs_img.clamp(min = 0., max = 1.))
-                output_final_vs_gt.append(img_gt.clamp(min = 0., max = 1.))
-                output_final_vs_gt.append(neural_img)
-                output_final_vs_gt.append((outputs_img - img_gt).abs().clamp(min = 0., max = 1.))
-                output_final_vs_gt.append((neural_img - outputs_img).abs().clamp(min = 0., max = 1.))
-                output_final_vs_gt = torch.cat(output_final_vs_gt, dim = 0)
-                writer.add_image("output_final_vs_gt",
-                                torchvision.utils.make_grid(output_final_vs_gt,
-                                                            nrow = outputs_img.shape[0],
-                                                            range = (0, 1),
-                                                            scale_each = False,
-                                                            normalize = False).cpu().detach().numpy(),
-                                                            iter)
-
-                raster_uv_maps = torch.cat((uv_map.permute(0,3,1,2),  # N H W 2 -> N 2 H W
-                                    torch.zeros(uv_map.shape[0], 1, uv_map.shape[1], uv_map.shape[2], dtype=uv_map.dtype, device=uv_map.device)),
-                                    dim = 1)
-                writer.add_image("raster_uv_vis",
-                                torchvision.utils.make_grid(raster_uv_maps,
-                                                            nrow = raster_uv_maps[0].shape[0],
-                                                            range = (0, 1),
-                                                            scale_each = False,
-                                                            normalize = False).cpu().detach().numpy()[::-1, :, :], # uv0 -> 0vu (rgb)
-                                                            iter)
-                writer.add_image("atlas_vis",
-                                torchvision.utils.make_grid(atlas,
-                                                            nrow = raster_uv_maps[0].shape[0],
-                                                            range = (0, 1),
-                                                            scale_each = False,
-                                                            normalize = False).cpu().detach().numpy()[:, :, :],
-                                                            iter)
-            iter += 1
-            
-            if iter % cfg.LOG.CHECKPOINT_FREQ == 0:
-                final_output_dir = os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter))
-                is_best_model = False
-                save_checkpoint({
-                    'epoch': epoch + 1,
-                    'iter': iter + 1,
-                    'model': cfg.MODEL.NAME,
-                    'state_dict': model_net.state_dict(),
-                    'atlas': atlas,
-                    'optimizer': optimizerG.state_dict(),
-                    # 'best_state_dict': model.module.state_dict(),
-                    # 'perf': perf_indicator,
-                }, is_best_model, final_output_dir)
-                # scipy.io.savemat('/data/NFS/new_disk/chenxin/relightable-nr/data/densepose_cx/logs/dnr/tmp/neural_img_epoch_%d_iter_%s_.npy'% (epoch, iter), 
-                # {"neural_tex": model_net.neural_tex.cpu().clone().detach().numpy()})
-                # model_net
-
+            # Log
+            loss_list = criterion.loss_list()
             end = time.time()
-            log_time = datetime.datetime.now().strftime('%m/%d') + '_' + datetime.datetime.now().strftime('%H:%M:%S') 
-            print("%s Iter-%07d Epoch-%03d loss_g/rgb/hsv/tex %0.4f/%0.4f/%0.4f/%0.4f mae_valid %0.4f psnr_valid %0.4f t %0.2fs" 
-                  % (log_time,
-                     iter,
-                     epoch,
-                     loss_g, 
-                     loss_rn, 
-                     loss_rn_hsv, 
-                     loss_atlas, 
-                     err_metrics_batch_i['mae_valid_mean'], 
-                     err_metrics_batch_i['psnr_valid_mean'], 
-                     end - start))
+            iter_time = end - start
+            vis.writer_add_scalar(writer, iter, epoch, err_metrics_batch_i, loss_list, log_time, iter_time)
+ 
+            iter += 1           
+            start = time.time()
+
+        lr_scheduler.step()
+
+        if epoch % cfg.LOG.CHECKPOINT_FREQ == 0:
+            final_output_dir = os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter))
+            is_best_model = False
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'iter': iter + 1,
+                'model': cfg.MODEL.NAME,
+                'state_dict': model_net.state_dict(),
+                'atlas': atlas,
+                'optimizer': optimizerG.state_dict(),
+                # 'best_state_dict': model.module.state_dict(),
+                # 'perf': perf_indicator,
+            }, is_best_model, final_output_dir)
+            # scipy.io.savemat('/data/NFS/new_disk/chenxin/relightable-nr/data/densepose_cx/logs/dnr/tmp/neural_img_epoch_%d_iter_%s_.npy'% (epoch, iter), 
+            # {"neural_tex": model_net.neural_tex.cpu().clone().detach().numpy()})
+            # model_net
+
+            # validation
+            if cfg.TRAIN.VAL_FREQ > 0:
+                if not epoch % cfg.TRAIN.VAL_FREQ:
+                    print('Begin validation...')
+                    start_val = time.time()
+                    with torch.no_grad():
+                        # error metrics
+                        metric_val = {'mae_valid':[],'mse_valid':[],'psnr_valid':[],'ssim_valid':[]}
+                        loss_list_val ={'Loss':[], 'rgb':[], 'hsv':[], 'atlas':[]}
+
+                        val_iter = 0
+                        for view_val_trgt in view_val_dataloader:
+                            ####################################################################
+                            # all put into forward ?
+                            # 
+                            img_gt = view_val_trgt['img'].cuda()
+                            # if cfg.DATASET.DATASET == 'DomeViewDataset':
+                            #     uv_map, alpha_map, cur_obj_path = model.module.project_with_rasterizer(cur_obj_path, view_dataset.objs, view_trgt)
+                            #     ROI = view_trgt['ROI'].cuda()
+                            # elif cfg.DATASET.DATASET == 'DomeViewDataset':
+                            uv_map = view_val_trgt['uv_map'].cuda()
+                            alpha_map = view_val_trgt['mask'][:,None,:,:].cuda()
+                            ROI = None
+
+                            # ignore loss outside alpha_map and ROI
+                            if alpha_map is not None:
+                                img_gt = img_gt * alpha_map
+                            if ROI is not None:
+                                img_gt = img_gt * ROI
+
+                            outputs = model.forward(view_data, is_train=False)
+                            # outputs = model.forward(uv_map = uv_map,
+                            #                 img_gt = img_gt,
+                            #                 alpha_map = alpha_map,
+                            #                 ROI = ROI)
+
+                            outputs_img = outputs[:, 0:3, : ,:]
+                            neural_img = outputs[:, 3:6, : ,:]
+                            aligned_uv = outputs[:, -2:, : ,:]
+
+                            if alpha_map is not None:
+                                outputs = outputs * alpha_map
+                            if ROI is not None:
+                                outputs = outputs * ROI
+
+                            # ignore loss outside alpha_map and ROI
+                            if alpha_map is not None:
+                                img_gt = img_gt * alpha_map
+                            if ROI is not None:
+                                img_gt = img_gt * ROI
+                  
+
+                            # Metrics
+                            loss_val = criterion(outputs, img_gt)
+                            loss_list_val_batch = criterion.loss_list()
+                            metric_val_batch = metric.compute_err_metrics_batch(outputs_img * 255.0,
+                                                                                        img_gt * 255.0, alpha_map,
+                                                                                        compute_ssim=True)
+                            batch_size = outputs_img.shape[0]
+                            for i in range(batch_size):
+                                for key in list(metric_val.keys()):
+                                    if key in metric_val_batch.keys():
+                                        metric_val[key].append(metric_val_batch[key][i])
+                            for key, val in loss_list_val_batch.items():
+                                loss_list_val[key].append(val)
+
+                            if val_iter == 0:
+                                iter_id = epoch
+                                vis.writer_add_image(writer, iter_id, epoch, img_gt, outputs_img, neural_img, uv_map, aligned_uv, atlas = None, ex_name ='Val_')
+                            val_iter = val_iter + 1
+
+                        # mean error
+                        for key in list(metric_val.keys()):
+                            if metric_val[key]:
+                                metric_val[key] = np.vstack(metric_val[key])
+                                metric_val[key + '_mean'] = metric_val[key].mean()
+                            else:
+                                metric_val[key + '_mean'] = np.nan
+                        for key in loss_list_val.keys():
+                            loss_list_val[key] = torch.tensor(loss_list_val[key]).mean()
+
+                        # vis
+                        end_val = time.time()
+                        val_time = end_val - start_val
+                        log_time = datetime.datetime.now().strftime('%m/%d') + '_' + datetime.datetime.now().strftime('%H:%M:%S') 
+                        iter_id = epoch
+                        vis.writer_add_scalar(writer, iter_id, epoch, metric_val, loss=loss_list_val, log_time=log_time, iter_time=val_time, ex_name ='Val')
 
 if __name__ == '__main__':
     main()

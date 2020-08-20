@@ -37,6 +37,14 @@ def interpolate_bilinear_inv(img, sub_u, sub_v, texture_size):
 
     return output.permute(0,2,3,1)
 
+def interpolate_atlas(tex, window_rate=0.06):
+    tex_size = tex.shape[2]
+    window_size = window_rate * tex_size
+    # to-do 0819
+
+    return tex
+
+
 def interpolate_bilinear(data, sub_x, sub_y):
     '''
     data: [H, W, C]

@@ -15,18 +15,27 @@ import neural_renderer as nr
 class DomeViewDataset():
     def __init__(self,
                  cfg,
-                 root_dir,
-                 calib_path,
-                 calib_format,
-                 sampling_pattern,
+                #  root_dir,
+                #  calib_path,
+                #  calib_format,
+                #  sampling_pattern,
                  is_train = True,
-                 ignore_dist_coeffs = True,
-                 precomp_high_dir = None,
-                 precomp_low_dir = None,
-                 preset_uv_path = None,
+                #  ignore_dist_coeffs = True,
+                #  precomp_high_dir = None,
+                #  precomp_low_dir = None,
+                #  preset_uv_path = None,
                  ):
         super().__init__()
 
+        root_dir = cfg.DATASET.ROOT,
+        calib_path = cfg.DATASET.CALIB_PATH,
+        calib_format = cfg.DATASET.CALIB_FORMAT,
+        sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN,
+        precomp_high_dir = cfg.DATASET.PRECOMP_DIR,
+        precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
+        preset_uv_path = cfg.DATASET.UV_PATH
+        ignore_dist_coeffs = True
+        
         self.cfg = cfg
         self.root_dir = root_dir
         self.calib_format = calib_format

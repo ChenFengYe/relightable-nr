@@ -106,38 +106,44 @@ class RenderNet(torch.nn.Module):
     #         pass
     
     def get_atalas(self):
-        return self.texture_mapper.textures[0].clone().detach().cpu().permute(0,3,1,2)
-        # return self.texture_mapper.textures[0].clone().detach().cpu().permute(0,3,1,2)[:, 0:3, :, :]
+        # atlas = self.texture_mapper.textures[0].clone().detach().cpu().permute(0,3,1,2)
+        # atlas_set = []
+        # for ic in atlas.shape[1]/3:
+        #     channel_range = [3*ic, 3*(ic+1)]
+        #     atlas_set.append(atlas[1,channel_range[0]:channel_range[1],:,:])
+        # atlas_set = torch.cat(atlas_set, dim = 0)
+        # return atlas_set
+        return self.texture_mapper.textures[0].clone().detach().cpu().permute(0,3,1,2)[:, 0:3, :, :]
 
     def forward(self, uv_map, img_gt=None, alpha_map=None, ROI=None):
         # first sample texture
-        neural_img = self.texture_mapper(uv_map = uv_map)
+        neural_img = self.texture_mapper.forward(uv_map = uv_map.clone().detach(), no_grad = True)
 
         # align uvmap
-        aligned_uv = self.align_module(input = uv_map.permute(0,3,1,2), ref = neural_img).permute(0,2,3,1)
+        # to-do
+        # 1 change bone to res-net generater for 
+        #             1.1 fix lighting change
+        # 2 SPADE
+        #
+        #
+        #
+        aligned_uv = self.align_module.forward(input = uv_map.permute(0,3,1,2), ref = neural_img).permute(0,2,3,1)
 
         # clamp uv [-1, 1]
-        aligned_uv = torch.clamp(aligned_uv, -1, 1)
+        aligned_uv = torch.clamp(aligned_uv, 0, 1)
 
         # re-sample texture
-        neural_img = self.texture_mapper(uv_map = aligned_uv)
+        neural_img = self.texture_mapper.forward(uv_map = aligned_uv)
 
         # rendering module
-        outputs = self.render_module(neural_img, None)
+        outputs_img = self.render_module.forward(neural_img.clone(), None)
         
-        # img_max_val = 2.0
-        # outputs = (outputs * 0.5 + 0.5) * img_max_val # map to [0, img_max_val]
-
-        if alpha_map is not None:
-            outputs = outputs * alpha_map
-            neural_img = neural_img * alpha_map
-
-        if ROI is not None:
-            outputs = outputs * ROI
-            neural_img = neural_img * ROI
-
-        outputs = torch.cat((outputs, neural_img), dim = 1)
+        outputs = torch.cat((outputs_img, neural_img, aligned_uv.permute(0,3,1,2)), dim = 1)
         return outputs
 
     def parameters(self):
-        return list(self.texture_mapper.parameters()) + list(self.render_module.parameters()) + list(self.align_module.parameters())
+        params = []
+        for part in self.part_list:
+            params.extend(list(part.parameters()))
+        return params
+        # return list(self.texture_mapper.parameters())+list(self.render_module.parameters())+list(self.align_module.parameters())
