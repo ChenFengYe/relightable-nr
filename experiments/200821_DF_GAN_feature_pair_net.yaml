@@ -1,10 +1,10 @@
 AUTO_RESUME: True
-GPUS: 0,1,2,3
-DIST_URL: 'tcp://127.0.0.1:23456'
+GPUS: 0,
+DIST_URL: 'tcp://127.0.0.1:23457'
 VERBOSE: True
 
 LOG:
-  CFG_NAME: 200819_DF_all_feature_pair_net.yaml
+  CFG_NAME: 200821_DF_GAN_feature_pair_net.yaml
   LOG_DIR: log
   PRINT_FREQ: 200
   CHECKPOINT_FREQ: 2000
@@ -14,6 +14,8 @@ DATASET:
   ROOT: 'data/densepose_deepfashion_all'
   FRAME_RANGE: [-1, -1]
   IMG_DIR: '*.jpg'
+  # FRAME_RANGE: [1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4]
+  # IMG_DIR: '05510_%d.jpg'
 
   CAM_RANGE: [-1]  # [id] for single cam_id
   OUTPUT_SIZE: [256, 256]
@@ -39,7 +41,7 @@ DATASET:
 
 MODEL:
   INIT_WEIGHTS: True
-  NAME: FeaturePairNet # RenderNet FeatureNet FeaturePairNet
+  NAME: Pix2PixModel # RenderNet FeatureNet FeaturePairNet
   PRETRAINED: ''
   TEX_CREATER:
     NUM_CHANNELS: 3
@@ -67,7 +69,7 @@ LOSS:
     WEIGHT_HSV: 0.0
     WEIGHT_ATLAS: 1.0
 TRAIN:
-  EXP_NAME: 'DFAll_texCh16_fePair_texLoss1_perLoss10_dataNotAug'
+  EXP_NAME: 'GAN_DFAll_texCh16_fePair_texLoss1_perLoss10_dataNotAug'
   BATCH_SIZE: 4
   BEGIN_EPOCH: 0
   RESUME: False
@@ -77,9 +79,9 @@ TRAIN:
   SAMPLING_PAIRWISE: True
   SHUFFLE: True
 
-  LR: 0.001
-  LR_FACTOR: 0.1
-  LR_STEP: [3000, 6000]
+  LR: 0.0002
+  LR_FACTOR: 0.5
+  LR_STEP: [100, 200]
   OPTIMIZER: adam
   MOMENTUM: 0.9
   WD: 0.0001

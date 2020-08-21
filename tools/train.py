@@ -53,6 +53,7 @@ def main():
     from lib.models.render_net import RenderNet
     from lib.models.feature_net import FeatureNet
     from lib.models.merge_net import MergeNet
+    from lib.models.feature_pair_net import FeaturePairNet
 
     from lib.engine.loss import MultiLoss  
 
@@ -154,7 +155,6 @@ def main():
     iter = iter_init
     for epoch in range(epoch_begin, cfg.TRAIN.END_EPOCH + 1):
         for view_data in view_dataloader:
-            img_gt = view_data['img'].cuda()
             # ####################################################################
             # # all put into forward ?
             # # 
@@ -172,7 +172,12 @@ def main():
             #                         alpha_map = alpha_map,
             #                         ROI = ROI)
             outputs = model.forward(view_data, is_train=True)
-
+            
+            img_gt = view_data['img'].cuda()
+            alpha_map = view_data['mask'][:,None,:,:].cuda()
+            uv_map = view_data['uv_map'].cuda()
+            ROI = None
+            
             if alpha_map is not None:
                 outputs = outputs * alpha_map
             if ROI is not None:
@@ -210,7 +215,9 @@ def main():
             # get output images
             outputs_img = outputs[:, 0:3, : ,:]
             neural_img = outputs[:, 3:6, : ,:]
-            aligned_uv = outputs[:, -2:, : ,:]
+            aligned_uv = None
+            # aligned_uv = outputs[:, -2:, : ,:]
+            # aligned_uv = outputs[:, -2:, : ,:]
 
             atlas = model_net.get_atalas()
             
@@ -221,7 +228,8 @@ def main():
 
             # vis
             if not iter % cfg.LOG.PRINT_FREQ:
-                vis.writer_add_image(writer, iter,epoch,img_gt, outputs_img, neural_img, uv_map, aligned_uv, atlas)
+                img_ref = view_data['img_ref'].cuda()
+                vis.writer_add_image(writer, iter, epoch, img_gt, outputs_img, neural_img, uv_map, aligned_uv, atlas, img_ref)
 
             # Log
             loss_list = criterion.loss_list()
@@ -232,112 +240,100 @@ def main():
             iter += 1           
             start = time.time()
 
-        lr_scheduler.step()
+            lr_scheduler.step()
 
-        if epoch % cfg.LOG.CHECKPOINT_FREQ == 0:
-            final_output_dir = os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter))
-            is_best_model = False
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'iter': iter + 1,
-                'model': cfg.MODEL.NAME,
-                'state_dict': model_net.state_dict(),
-                'atlas': atlas,
-                'optimizer': optimizerG.state_dict(),
-                # 'best_state_dict': model.module.state_dict(),
-                # 'perf': perf_indicator,
-            }, is_best_model, final_output_dir)
-            # scipy.io.savemat('/data/NFS/new_disk/chenxin/relightable-nr/data/densepose_cx/logs/dnr/tmp/neural_img_epoch_%d_iter_%s_.npy'% (epoch, iter), 
-            # {"neural_tex": model_net.neural_tex.cpu().clone().detach().numpy()})
-            # model_net
+            if iter % cfg.LOG.CHECKPOINT_FREQ==0 and iter!=0:
+                final_output_dir = os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter))
+                is_best_model = False
+                save_checkpoint({
+                    'epoch': epoch + 1,
+                    'iter': iter + 1,
+                    'model': cfg.MODEL.NAME,
+                    'state_dict': model_net.state_dict(),
+                    'atlas': atlas,
+                    'optimizer': optimizerG.state_dict(),
+                    # 'best_state_dict': model.module.state_dict(),
+                    # 'perf': perf_indicator,
+                }, is_best_model, final_output_dir)
+                # scipy.io.savemat('/data/NFS/new_disk/chenxin/relightable-nr/data/densepose_cx/logs/dnr/tmp/neural_img_epoch_%d_iter_%s_.npy'% (epoch, iter), 
+                # {"neural_tex": model_net.neural_tex.cpu().clone().detach().numpy()})
+                # model_net
 
-            # validation
-            if cfg.TRAIN.VAL_FREQ > 0:
-                if not epoch % cfg.TRAIN.VAL_FREQ:
-                    print('Begin validation...')
-                    start_val = time.time()
-                    with torch.no_grad():
-                        # error metrics
-                        metric_val = {'mae_valid':[],'mse_valid':[],'psnr_valid':[],'ssim_valid':[]}
-                        loss_list_val ={'Loss':[], 'rgb':[], 'hsv':[], 'atlas':[]}
+                # validation
+                if cfg.TRAIN.VAL_FREQ > 0:
+                    if not epoch % cfg.TRAIN.VAL_FREQ:
+                        print('Begin validation...')
+                        start_val = time.time()
+                        with torch.no_grad():
+                            # error metrics
+                            metric_val = {'mae_valid':[],'mse_valid':[],'psnr_valid':[],'ssim_valid':[]}
+                            loss_list_val ={'Loss':[], 'rgb':[], 'hsv':[], 'atlas':[]}
 
-                        val_iter = 0
-                        for view_val_trgt in view_val_dataloader:
-                            ####################################################################
-                            # all put into forward ?
-                            # 
-                            img_gt = view_val_trgt['img'].cuda()
-                            # if cfg.DATASET.DATASET == 'DomeViewDataset':
-                            #     uv_map, alpha_map, cur_obj_path = model.module.project_with_rasterizer(cur_obj_path, view_dataset.objs, view_trgt)
-                            #     ROI = view_trgt['ROI'].cuda()
-                            # elif cfg.DATASET.DATASET == 'DomeViewDataset':
-                            uv_map = view_val_trgt['uv_map'].cuda()
-                            alpha_map = view_val_trgt['mask'][:,None,:,:].cuda()
-                            ROI = None
+                            val_iter = 0
+                            for view_val_trgt in view_val_dataloader:
+                                img_gt = view_val_trgt['img'].cuda()
+                                # alpha_map = None
+                                # ROI = None
 
-                            # ignore loss outside alpha_map and ROI
-                            if alpha_map is not None:
-                                img_gt = img_gt * alpha_map
-                            if ROI is not None:
-                                img_gt = img_gt * ROI
+                                # img_gt = view_val_trgt['img'].cuda()
+                                # # if cfg.DATASET.DATASET == 'DomeViewDataset':
+                                # #     uv_map, alpha_map, cur_obj_path = model.module.project_with_rasterizer(cur_obj_path, view_dataset.objs, view_trgt)
+                                # #     ROI = view_trgt['ROI'].cuda()
+                                # # elif cfg.DATASET.DATASET == 'DomeViewDataset':
+                                # uv_map = view_val_trgt['uv_map'].cuda()
+                                # alpha_map = view_val_trgt['mask'][:,None,:,:].cuda()
+                                # ROI = None
 
-                            outputs = model.forward(view_data, is_train=False)
-                            # outputs = model.forward(uv_map = uv_map,
-                            #                 img_gt = img_gt,
-                            #                 alpha_map = alpha_map,
-                            #                 ROI = ROI)
 
-                            outputs_img = outputs[:, 0:3, : ,:]
-                            neural_img = outputs[:, 3:6, : ,:]
-                            aligned_uv = outputs[:, -2:, : ,:]
+                                outputs = model.forward(view_data, is_train=False)
+                                
+                                outputs_img = outputs[:, 0:3, : ,:]
+                                neural_img = outputs[:, 3:6, : ,:]
+                                aligned_uv = outputs[:, -2:, : ,:]
 
-                            if alpha_map is not None:
-                                outputs = outputs * alpha_map
-                            if ROI is not None:
-                                outputs = outputs * ROI
+                                # ignore loss outside alpha_map and ROI
+                                if alpha_map is not None:
+                                    img_gt = img_gt * alpha_map
+                                    outputs = outputs * alpha_map
+                                if ROI is not None:
+                                    img_gt = img_gt * ROI
+                                    outputs = outputs * ROI
 
-                            # ignore loss outside alpha_map and ROI
-                            if alpha_map is not None:
-                                img_gt = img_gt * alpha_map
-                            if ROI is not None:
-                                img_gt = img_gt * ROI
-                  
+                                # Metrics
+                                loss_val = criterion(outputs, img_gt)
+                                loss_list_val_batch = criterion.loss_list()
+                                metric_val_batch = metric.compute_err_metrics_batch(outputs_img * 255.0,
+                                                                                            img_gt * 255.0, alpha_map,
+                                                                                            compute_ssim=True)
+                                batch_size = outputs_img.shape[0]
+                                for i in range(batch_size):
+                                    for key in list(metric_val.keys()):
+                                        if key in metric_val_batch.keys():
+                                            metric_val[key].append(metric_val_batch[key][i])
+                                for key, val in loss_list_val_batch.items():
+                                    loss_list_val[key].append(val)
 
-                            # Metrics
-                            loss_val = criterion(outputs, img_gt)
-                            loss_list_val_batch = criterion.loss_list()
-                            metric_val_batch = metric.compute_err_metrics_batch(outputs_img * 255.0,
-                                                                                        img_gt * 255.0, alpha_map,
-                                                                                        compute_ssim=True)
-                            batch_size = outputs_img.shape[0]
-                            for i in range(batch_size):
-                                for key in list(metric_val.keys()):
-                                    if key in metric_val_batch.keys():
-                                        metric_val[key].append(metric_val_batch[key][i])
-                            for key, val in loss_list_val_batch.items():
-                                loss_list_val[key].append(val)
+                                if val_iter == 0:
+                                    iter_id = epoch
+                                    vis.writer_add_image(writer, iter_id, epoch, img_gt, outputs_img, neural_img, uv_map, aligned_uv, atlas = None, ex_name ='Val_')
+                                val_iter = val_iter + 1
 
-                            if val_iter == 0:
-                                iter_id = epoch
-                                vis.writer_add_image(writer, iter_id, epoch, img_gt, outputs_img, neural_img, uv_map, aligned_uv, atlas = None, ex_name ='Val_')
-                            val_iter = val_iter + 1
+                            # mean error
+                            for key in list(metric_val.keys()):
+                                if metric_val[key]:
+                                    metric_val[key] = np.vstack(metric_val[key])
+                                    metric_val[key + '_mean'] = metric_val[key].mean()
+                                else:
+                                    metric_val[key + '_mean'] = np.nan
+                            for key in loss_list_val.keys():
+                                loss_list_val[key] = torch.tensor(loss_list_val[key]).mean()
 
-                        # mean error
-                        for key in list(metric_val.keys()):
-                            if metric_val[key]:
-                                metric_val[key] = np.vstack(metric_val[key])
-                                metric_val[key + '_mean'] = metric_val[key].mean()
-                            else:
-                                metric_val[key + '_mean'] = np.nan
-                        for key in loss_list_val.keys():
-                            loss_list_val[key] = torch.tensor(loss_list_val[key]).mean()
-
-                        # vis
-                        end_val = time.time()
-                        val_time = end_val - start_val
-                        log_time = datetime.datetime.now().strftime('%m/%d') + '_' + datetime.datetime.now().strftime('%H:%M:%S') 
-                        iter_id = epoch
-                        vis.writer_add_scalar(writer, iter_id, epoch, metric_val, loss=loss_list_val, log_time=log_time, iter_time=val_time, ex_name ='Val')
+                            # vis
+                            end_val = time.time()
+                            val_time = end_val - start_val
+                            log_time = datetime.datetime.now().strftime('%m/%d') + '_' + datetime.datetime.now().strftime('%H:%M:%S') 
+                            iter_id = epoch
+                            vis.writer_add_scalar(writer, iter_id, epoch, metric_val, loss=loss_list_val, log_time=log_time, iter_time=val_time, ex_name ='Val')
 
 if __name__ == '__main__':
     main()

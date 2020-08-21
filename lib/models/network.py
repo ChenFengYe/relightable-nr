@@ -26,12 +26,12 @@ class TextureCreater(nn.Module):
         self.register_buffer('texture_size', torch.tensor(texture_size))
         self.register_buffer('texture_num_ch', torch.tensor(texture_num_ch))
         
-        texture = torch.ones(1, texture_size, texture_size, self.texture_num_ch, dtype = torch.float32)
-        self.texture = texture
+        # texture = torch.ones(1, texture_size, texture_size, self.texture_num_ch, dtype = torch.float32)
+        # self.texture = texture
 
         # fix_texture:
-        if fix_texture:
-            self.texture.requires_grad = False
+        # if fix_texture:
+        #     self.texture.requires_grad = False
         
     def forward(self, img, uv_map):
         '''
@@ -65,9 +65,9 @@ class TextureCreater(nn.Module):
         texture = misc.interpolate_bilinear_inv(img_HR, sub_u, sub_v, texture_size)
 
         # fix hole
-        self.texture = misc.interpolate_atlas(texture)
+        texture = misc.interpolate_atlas(texture)
         
-        return self.texture
+        return texture
 
 class TextureMapper(nn.Module):
     def __init__(self,
@@ -199,17 +199,12 @@ class TextureMapper(nn.Module):
         return out
 
 class TextureNoGradMapper(nn.Module):
-    def __init__(self,
-                texture_size,
-                texture_num_ch):
+    def __init__(self):
         '''
         texture_size: [1]
         texture_num_ch: [1]
         '''
         super(TextureNoGradMapper, self).__init__()
-
-        self.register_buffer('texture_size', torch.tensor(texture_size))
-        self.register_buffer('texture_num_ch', torch.tensor(texture_num_ch))
 
     def forward(self, uv_map, neural_tex):
         '''
@@ -217,17 +212,15 @@ class TextureNoGradMapper(nn.Module):
         neural_tex: [1, C, H, W]
         return: [N, C, H, W]
         '''
-        texture_size = self.texture_size
-
         # vertex texcoords map in [-1, 1]
         grid_uv_map = uv_map * 2. - 1.
         grid_uv_map[..., -1] = -grid_uv_map[..., -1] # flip v
 
-        # sample from texture (bilinear)
-        texture_batch = [neural_tex for ib in range(grid_uv_map.shape[0])]
-        texture_batch = torch.cat(tuple(texture_batch), dim = 0)
+        # # sample from texture (bilinear)
+        # texture_batch = [neural_tex for ib in range(grid_uv_map.shape[0])]
+        # texture_batch = torch.cat(tuple(texture_batch), dim = 0)
 
-        output = torch.nn.functional.grid_sample(texture_batch.permute(0, 3, 1, 2), grid_uv_map, mode='bilinear', padding_mode='zeros') # , align_corners=False
+        output = torch.nn.functional.grid_sample(neural_tex, grid_uv_map, mode='bilinear', padding_mode='zeros') # , align_corners=False
 
         # Add uv_map to mask sure background is not mask
         uv_map = uv_map.permute(3, 0, 1, 2)
@@ -248,6 +241,7 @@ class TextureNoGradMapper(nn.Module):
                     align_corners = True,
                     ).permute(0, 2, 3, 1)
         return out
+
 class Rasterizer(nn.Module):
     def __init__(self,
                 cfg, 
@@ -398,7 +392,6 @@ class Rasterizer(nn.Module):
 
         return uv_map, alpha, face_index_map, weight_map, faces_v_idx, normal_map, normal_map_cam, faces_v, faces_vt, position_map, position_map_cam, depth, v_uvz, v_front_mask
 
-
 class RenderingModule(nn.Module):
     def __init__(self,
                  nf0,
@@ -434,7 +427,7 @@ class RenderingModule(nn.Module):
         # self.tanh = nn.Tanh()
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self, input, v_fea):
+    def forward(self, input, v_fea = None):
         x = self.net(input, v_fea)
         # return self.tanh(x)
         return self.sigmoid(x)
@@ -447,7 +440,8 @@ class FeatureModule(nn.Module):
                  num_down_unet = 5,
                  out_channels_gcn = 512,
                  use_gcn = True,
-                 outermost_highway_mode = 'concat'):
+                 outermost_highway_mode = 'concat',
+                 backbone = 'Unet'):
         super().__init__()
 
         self.register_buffer('nf0', torch.tensor(nf0))
@@ -456,15 +450,13 @@ class FeatureModule(nn.Module):
         self.register_buffer('num_down_unet', torch.tensor(num_down_unet))
         self.register_buffer('out_channels_gcn', torch.tensor(out_channels_gcn))
 
-        self.net = Unet(in_channels = in_channels,
+        self.net = eval(backbone)(in_channels = in_channels,
                  out_channels = out_channels,
                  outermost_linear = True,
                  use_dropout = False,
-                #  use_dropout = True,
                  dropout_prob = 0.1,
                  nf0 = nf0,
                  norm = nn.InstanceNorm2d,
-                #  norm = nn.BatchNorm2d, # chenxin 200803  temporaray for debug
                  max_channels = 8 * nf0,
                  num_down = num_down_unet,
                  out_channels_gcn = out_channels_gcn,
@@ -490,18 +482,53 @@ class FeatureModule(nn.Module):
 
         # unet
         x = self.net(cat_texs, v_fea)
-
-        # attention channel
-        # to-do 0819
-        feature_ch = x[:,:-1,:,:]
-        attention_ch = x[:,-1,:,:]
-        attention_ch = self.sigmoid(attention_ch)
-        return feature_ch, attention_ch
-
         # # average each batch
         # x_mean = torch.mean(x, dim=0, keepdim=True)
         # # return self.tanh(x_mean)
-        # return self.sigmoid(x)
+        return self.sigmoid(x)        
+
+class AttentionFeatureModule(FeatureModule):
+    def __init__(self,
+                 nf0,
+                 in_channels,
+                 out_channels,
+                 num_down_unet = 5,
+                 out_channels_gcn = 512,
+                 use_gcn = True,
+                 outermost_highway_mode = 'concat'):
+        backbone = 'AttentionUnet'
+        super().__init__(nf0,
+                         in_channels,
+                         out_channels,
+                         num_down_unet,
+                         out_channels_gcn,
+                         use_gcn,
+                         outermost_highway_mode,
+                         backbone)
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, orig_texs, neural_tex = None, v_fea = None):
+        '''
+        orig_tex: [N, H, W, 3]
+        neural_tex: [1, H, W, C]       
+        return: [N, C, H, W]
+        '''
+        # cat neural tex for each batch
+        if neural_tex is not None:
+            repeat_size = (int(orig_texs.shape[0]/neural_tex.shape[0]),1,1,1)
+            neural_texs = neural_tex.repeat(repeat_size)
+            cat_texs = torch.cat((orig_texs, neural_texs), 3).permute(0,3,1,2)
+        else:
+            cat_texs = orig_texs
+
+        # unet
+        x = self.net(cat_texs, v_fea)
+
+        feature_ch = x[:,:-1,:,:]
+        attention_ch = x[:,-1,:,:][:,None,:,:]
+        attention_ch = self.sigmoid(attention_ch)
+        return feature_ch, attention_ch
 
 class DenseDeepGCN(torch.nn.Module):
     def __init__(self, opt):
@@ -564,7 +591,6 @@ class DenseDeepGCN(torch.nn.Module):
         fea = self.linear(fusion.view(-1)).unsqueeze(0)
         return fea
 
-
 class Interpolater(nn.Module):
     def __init__(self):
         super().__init__()
@@ -586,7 +612,6 @@ class Interpolater(nn.Module):
         else:
             raise ValueError('data.shape[0] should be 1 or batch size')
 
-
 class InterpolaterVertexAttr(nn.Module):
     def __init__(self):
         super().__init__()
@@ -600,7 +625,6 @@ class InterpolaterVertexAttr(nn.Module):
         return: [N, H, W, num_attr]
         '''
         return render.interp_vertex_attr(v_attr, faces_v_idx, face_index_map, weight_map)
-
 
 class Mesh(nn.Module):
     def __init__(self, obj_fp, global_RT = None):
@@ -637,7 +661,6 @@ class Mesh(nn.Module):
     def forward(self):
         pass
 
-
 class RaysLTChromLoss(nn.Module):
     def __init__(self):
         super().__init__()
@@ -659,7 +682,6 @@ class RaysLTChromLoss(nn.Module):
             rays_lt_chrom_diff = rays_lt_chrom_diff * weight # [N, num_ray, H, W]
         loss_rays_lt_chrom = rays_lt_chrom_diff.sum() / alpha_map.sum() / rays_lt_chrom_diff.shape[1]
         return loss_rays_lt_chrom, rays_lt_chrom, rays_lt_chrom_mean, rays_lt_chrom_diff
-
 
 ####################################################################################################################################
 ################################################## Modules for Ray Based Renderer ##################################################
@@ -721,7 +743,6 @@ class RaySampler(nn.Module):
 
         return rays_dir, rays_uv, rays_dir_tangent
 
-
 class RayRenderer(nn.Module):
     def __init__(self, lighting_model, interpolater):
         super().__init__()
@@ -775,7 +796,6 @@ class RayRenderer(nn.Module):
             out = out_specular
 
         return out, out_specular, out_diffuse, ltt_specular_map, ltt_diffuse_map, rays_color, lp
-
 
 ##########################################################################################################################
 ################################################## Modules for Lighting ##################################################
@@ -875,7 +895,6 @@ class LightingSH(nn.Module):
         '''
         lp_recon = sph_harm.reconstruct_sh(coeff, self.basis_val_recon).reshape((int(self.lp_recon_h), int(self.lp_recon_w), -1)) # [H, W, C] or [num_lighting, H, W, C]
         return lp_recon
-
 
 # Light Probe model
 class LightingLP(nn.Module):
@@ -1003,3 +1022,222 @@ class AlignModule(nn.Module):
         output = F.grid_sample(input, grid, mode='nearest', padding_mode='zeros')
         # output = F.grid_sample(input, grid, mode='bilinear')
         return output
+
+##########################################################################################################################
+################################################## Modules for GAN ##################################################
+##########################################################################################################################
+'''
+From https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
+'''
+from torch.nn import init
+import functools
+
+class Identity(nn.Module):
+    def forward(self, x):
+        return x
+
+def init_weights(net, init_type='normal', init_gain=0.02):
+    """Initialize network weights.
+    Parameters:
+        net (network)   -- network to be initialized
+        init_type (str) -- the name of an initialization method: normal | xavier | kaiming | orthogonal
+        init_gain (float)    -- scaling factor for normal, xavier and orthogonal.
+    We use 'normal' in the original pix2pix and CycleGAN paper. But xavier and kaiming might
+    work better for some applications. Feel free to try yourself.
+    """
+    def init_func(m):  # define the initialization function
+        classname = m.__class__.__name__
+        if hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
+            if init_type == 'normal':
+                init.normal_(m.weight.data, 0.0, init_gain)
+            elif init_type == 'xavier':
+                init.xavier_normal_(m.weight.data, gain=init_gain)
+            elif init_type == 'kaiming':
+                init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
+            elif init_type == 'orthogonal':
+                init.orthogonal_(m.weight.data, gain=init_gain)
+            else:
+                raise NotImplementedError('initialization method [%s] is not implemented' % init_type)
+            if hasattr(m, 'bias') and m.bias is not None:
+                init.constant_(m.bias.data, 0.0)
+        elif classname.find('BatchNorm2d') != -1:  # BatchNorm Layer's weight is not a matrix; only normal distribution applies.
+            init.normal_(m.weight.data, 1.0, init_gain)
+            init.constant_(m.bias.data, 0.0)
+
+    print('initialize network with %s' % init_type)
+    net.apply(init_func)  # apply the initialization function <init_func>
+
+def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
+    """Initialize a network: 1. register CPU/GPU device (with multi-GPU support); 2. initialize the network weights
+    Parameters:
+        net (network)      -- the network to be initialized
+        init_type (str)    -- the name of an initialization method: normal | xavier | kaiming | orthogonal
+        gain (float)       -- scaling factor for normal, xavier and orthogonal.
+        gpu_ids (int list) -- which GPUs the network runs on: e.g., 0,1,2
+    Return an initialized network.
+    """
+    if len(gpu_ids) > 0:
+        assert(torch.cuda.is_available())
+        net.to(gpu_ids[0])
+        net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
+    init_weights(net, init_type, init_gain=init_gain)
+    return net        
+
+def get_norm_layer(norm_type='instance'):
+    """Return a normalization layer
+    Parameters:
+        norm_type (str) -- the name of the normalization layer: batch | instance | none
+    For BatchNorm, we use learnable affine parameters and track running statistics (mean/stddev).
+    For InstanceNorm, we do not use learnable affine parameters. We do not track running statistics.
+    """
+    if norm_type == 'batch':
+        norm_layer = functools.partial(nn.BatchNorm2d, affine=True, track_running_stats=True)
+    elif norm_type == 'instance':
+        norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
+    elif norm_type == 'none':
+        def norm_layer(x): return Identity()
+    else:
+        raise NotImplementedError('normalization layer [%s] is not found' % norm_type)
+    return norm_layer
+
+class NLayerDiscriminator(nn.Module):
+    """Defines a PatchGAN discriminator"""
+
+    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d):
+        """Construct a PatchGAN discriminator
+        Parameters:
+            input_nc (int)  -- the number of channels in input images
+            ndf (int)       -- the number of filters in the last conv layer
+            n_layers (int)  -- the number of conv layers in the discriminator
+            norm_layer      -- normalization layer
+        """
+        super(NLayerDiscriminator, self).__init__()
+        if type(norm_layer) == functools.partial:  # no need to use bias as BatchNorm2d has affine parameters
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+
+        kw = 4
+        padw = 1
+        sequence = [nn.Conv2d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw), nn.LeakyReLU(0.2, True)]
+        nf_mult = 1
+        nf_mult_prev = 1
+        for n in range(1, n_layers):  # gradually increase the number of filters
+            nf_mult_prev = nf_mult
+            nf_mult = min(2 ** n, 8)
+            sequence += [
+                nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                norm_layer(ndf * nf_mult),
+                nn.LeakyReLU(0.2, True)
+            ]
+
+        nf_mult_prev = nf_mult
+        nf_mult = min(2 ** n_layers, 8)
+        sequence += [
+            nn.Conv2d(ndf * nf_mult_prev, ndf * nf_mult, kernel_size=kw, stride=1, padding=padw, bias=use_bias),
+            norm_layer(ndf * nf_mult),
+            nn.LeakyReLU(0.2, True)
+        ]
+
+        sequence += [nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
+        self.model = nn.Sequential(*sequence)
+
+    def forward(self, input):
+        """Standard forward."""
+        return self.model(input)
+
+
+class PixelDiscriminator(nn.Module):
+    """Defines a 1x1 PatchGAN discriminator (pixelGAN)"""
+
+    def __init__(self, input_nc, ndf=64, norm_layer=nn.BatchNorm2d):
+        """Construct a 1x1 PatchGAN discriminator
+        Parameters:
+            input_nc (int)  -- the number of channels in input images
+            ndf (int)       -- the number of filters in the last conv layer
+            norm_layer      -- normalization layer
+        """
+        super(PixelDiscriminator, self).__init__()
+        if type(norm_layer) == functools.partial:  # no need to use bias as BatchNorm2d has affine parameters
+            use_bias = norm_layer.func == nn.InstanceNorm2d
+        else:
+            use_bias = norm_layer == nn.InstanceNorm2d
+
+        self.net = [
+            nn.Conv2d(input_nc, ndf, kernel_size=1, stride=1, padding=0),
+            nn.LeakyReLU(0.2, True),
+            nn.Conv2d(ndf, ndf * 2, kernel_size=1, stride=1, padding=0, bias=use_bias),
+            norm_layer(ndf * 2),
+            nn.LeakyReLU(0.2, True),
+            nn.Conv2d(ndf * 2, 1, kernel_size=1, stride=1, padding=0, bias=use_bias)]
+
+        self.net = nn.Sequential(*self.net)
+
+    def forward(self, input):
+        """Standard forward."""
+        return self.net(input)
+
+def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', init_type='normal', init_gain=0.02, gpu_ids=[]):
+    """Create a discriminator
+    Parameters:
+        input_nc (int)     -- the number of channels in input images
+        ndf (int)          -- the number of filters in the first conv layer
+        netD (str)         -- the architecture's name: basic | n_layers | pixel
+        n_layers_D (int)   -- the number of conv layers in the discriminator; effective when netD=='n_layers'
+        norm (str)         -- the type of normalization layers used in the network.
+        init_type (str)    -- the name of the initialization method.
+        init_gain (float)  -- scaling factor for normal, xavier and orthogonal.
+        gpu_ids (int list) -- which GPUs the network runs on: e.g., 0,1,2
+    Returns a discriminator
+    Our current implementation provides three types of discriminators:
+        [basic]: 'PatchGAN' classifier described in the original pix2pix paper.
+        It can classify whether 70×70 overlapping patches are real or fake.
+        Such a patch-level discriminator architecture has fewer parameters
+        than a full-image discriminator and can work on arbitrarily-sized images
+        in a fully convolutional fashion.
+        [n_layers]: With this mode, you can specify the number of conv layers in the discriminator
+        with the parameter <n_layers_D> (default=3 as used in [basic] (PatchGAN).)
+        [pixel]: 1x1 PixelGAN discriminator can classify whether a pixel is real or not.
+        It encourages greater color diversity but has no effect on spatial statistics.
+    The discriminator has been initialized by <init_net>. It uses Leakly RELU for non-linearity.
+    """
+    net = None
+    norm_layer = get_norm_layer(norm_type=norm)
+
+    if netD == 'basic':  # default PatchGAN classifier
+        net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer)
+    elif netD == 'n_layers':  # more options
+        net = NLayerDiscriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer)
+    elif netD == 'pixel':     # classify if each pixel is real or fake
+        net = PixelDiscriminator(input_nc, ndf, norm_layer=norm_layer)
+    else:
+        raise NotImplementedError('Discriminator model name [%s] is not recognized' % netD)
+    return init_net(net, init_type, init_gain, gpu_ids)
+
+##########################################################################################################################
+################################################## Utils ##################################################
+##########################################################################################################################
+from torch.optim import lr_scheduler
+
+def get_scheduler(optimizer, cfg):
+    """Return a learning rate scheduler
+    Parameters:
+        optimizer          -- the optimizer of the network
+        opt (option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions．　
+                              cfg.TRAIN.LR_MODE is the name of learning rate policy: linear | step | plateau | cosine
+    For 'linear', we keep the same learning rate for the first <opt.n_epochs> epochs
+    and linearly decay the rate to zero over the next <opt.n_epochs_decay> epochs.
+    For other schedulers (step, plateau, and cosine), we use the default PyTorch schedulers.
+    See https://pytorch.org/docs/stable/optim.html for more details.
+    """
+    if cfg.TRAIN.LR_MODE == 'multistep': # same as linear 
+        scheduler = lr_scheduler.MultiStepLR(optimizer, cfg.TRAIN.LR_STEP, cfg.TRAIN.LR_FACTOR)
+    elif cfg.TRAIN.LR_MODE == 'step':
+        scheduler = lr_scheduler.StepLR(optimizer, step_size=opt.lr_decay_iters, gamma=0.1)
+    elif cfg.TRAIN.LR_MODE == 'plateau':
+        scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, threshold=0.01, patience=5)
+    elif cfg.TRAIN.LR_MODE == 'cosine':
+        scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=opt.n_epochs, eta_min=0)
+    else:
+        return NotImplementedError('learning rate policy [%s] is not implemented', cfg.TRAIN.LR_MODE)
+    return scheduler

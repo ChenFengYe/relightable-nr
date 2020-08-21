@@ -62,9 +62,13 @@ def create_logger(cfg, cfg_path):
     if cfg.MODEL.NAME == 'RenderNet':
         netfile_name = 'render_net.py'
     elif cfg.MODEL.NAME == 'FeatureNet':
-        netfile_name = './lib/models/feature_net.py'
+        netfile_name = 'feature_net.py'
     elif cfg.MODEL.NAME == 'MergeNet':
-        netfile_name = './lib/models/merge_net.py'
+        netfile_name = 'merge_net.py'
+    elif cfg.MODEL.NAME == 'FeaturePairNet':
+        netfile_name = 'feature_pair_net.py'
+    elif cfg.MODEL.NAME == 'Pix2PixModel':
+        netfile_name = 'gan_net.py'
     else:
         raise ValueError('Unsupport Network framework!')
     netfile_path = os.path.join(log_dir, netfile_name)    
@@ -73,7 +77,6 @@ def create_logger(cfg, cfg_path):
     custom_copy('./lib/models/network.py', netfile2_path)
     print("  backup network(xx_net.py, network.py) file to " + netfile_path)
     return log_dir, iter, epoch, checkpoint_path
-
 
 def make_gif(input_path, save_path):
     with imageio.get_writer(save_path, mode='I') as writer:

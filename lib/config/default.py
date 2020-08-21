@@ -98,6 +98,21 @@ _C.MODEL.RENDER_MODULE.NUM_PARAMS = -1
 _C.MODEL.ALIGN_MODULE = CN()
 _C.MODEL.ALIGN_MODULE.MID_CHANNELS = 64
 
+_C.MODEL.GAN = CN()
+_C.MODEL.GAN.MODE = 'vanilla'
+_C.MODEL.GAN.LAMBDA_L1 = 100.0              # weight for L1 loss, the training objective is: GAN Loss + lambda_L1 * ||G(A)-B||_1
+
+_C.MODEL.NET_D = CN()
+_C.MODEL.NET_D.ARCH = 'basic'               # Specify discriminator architecture [basic | n_layers | pixel]. The basic model is a 70x70 PatchGAN. n_layers allows you to specify the layers in the discriminator
+_C.MODEL.NET_D.INPUT_CHANNELS = 6           # 6 = 3 + 3 (fake img + real img)
+_C.MODEL.NET_D.OUTPUT_CHANNELS = 3
+_C.MODEL.NET_D.N_LAYERS_D = 3               # Only used if netD==n_layers
+_C.MODEL.NET_D.NDF = 64                     # Number of discrim filters in the first conv layer
+_C.MODEL.NET_D.NORM = 'batch'               # Instance normalization or batch normalization [instance | batch | none]
+_C.MODEL.NET_D.INIT_TYPE = 'normal'         # Network initialization [normal | xavier | kaiming | orthogonal]
+_C.MODEL.NET_D.INIT_GAIN = 0.02             # Scaling factor for normal, xavier and orthogonal
+
+
 _C.TRAIN = CN()
 _C.TRAIN.EXP_NAME = 'example'
 _C.TRAIN.BATCH_SIZE = 1
@@ -114,6 +129,7 @@ _C.TRAIN.GAMMA = 1.0
 _C.TRAIN.SHUFFLE = True
 _C.TRAIN.VAL_FREQ = -1                          # Test on validation data every X iterations
 _C.TRAIN.LR = 0.001 
+_C.TRAIN.LR_MODE = 'multistep'
 _C.TRAIN.LR_FACTOR = 0.1
 _C.TRAIN.LR_STEP = [90, 110]
 _C.TRAIN.OPTIMIZER = 'adam'
@@ -174,10 +190,12 @@ def update_config(cfg, args):
         cfg.DATASET.MESH_DIR = os.path.join(cfg.DATASET.ROOT, cfg.DATASET.MESH_DIR[2:])
     if not cfg.DATASET.TEX_PATH and cfg.DATASET.TEX_PATH[:2] == '_/':
         cfg.DATASET.TEX_PATH = os.path.join(cfg.DATASET.ROOT, cfg.DATASET.TEX_PATH[2:])
-        cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs', 'dnr')
+        # cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs', 'dnr')
+        cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs')
 
     if not cfg.LOG.LOGGING_ROOT:
-        cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs', 'dnr')
+        cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs')
+        # cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs', 'dnr')
 
     if cfg.MODEL.PRETRAINED and cfg.MODEL.PRETRAINED[:2] == '_/':
         cfg.MODEL.PRETRAINED = os.path.join(cfg.DATASET.ROOT, cfg.MODEL.PRETRAINED[2:])

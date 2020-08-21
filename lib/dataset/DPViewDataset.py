@@ -46,14 +46,20 @@ class DPViewDataset():
             self.img_names = []
             # load with frame_range or all
             if len(self.frame_range):
-                for frame_idx in self.frame_range:
-                    self.img_names.append(cfg.DATASET.IMG_DIR % (frame_idx))
+                name_set = [cfg.DATASET.IMG_DIR % (frame_idx) for frame_idx in self.frame_range]
             else:
-                for x in os.listdir(self.img_dir):
-                    if is_image_file(x):
-                        self.img_names.append(x)
+                name_set = os.listdir(self.img_dir)
+            for img_name in name_set:
+                # check all data
+                img_key = os.path.splitext(img_name)[0]
+                image_path = os.path.join(self.img_dir, img_name)
+                uvmap_path = os.path.join(self.uvmap_dir, img_key + '_IUV.mat')
+                mask_path = os.path.join(self.mask_dir, img_key + '.png')
 
-            print(" building transform for images...")
+                if os.path.exists(image_path) and os.path.exists(mask_path) and os.path.exists(uvmap_path):
+                    self.img_names.append(img_name)
+
+            self.img_names = sorted(self.img_names)
         else:
             self.frame_range = cfg.TEST.FRAME_RANGE
 
@@ -77,27 +83,48 @@ class DPViewDataset():
                         self.img_names.append(x)
 
             self.img_names = sorted(self.img_names)
-        if cfg.VERBOSE:
-            print("image names", self.img_names)
+
+        print(" building transform for images...")
         self.transform = RandomTransform(size = cfg.DATASET.OUTPUT_SIZE,
                                          max_shift = cfg.DATASET.MAX_SHIFT,
                                          max_scale = cfg.DATASET.MAX_SCALE,
                                          max_rotation = cfg.DATASET.MAX_ROTATION,
                                          isTrain = is_train)
+
         self.uv_converter = UVConverter(cfg.DATASET.UV_CONVERTER)
 
         # create referred image set
         if self.is_pairwise:
             self.img_names_ref = []
-            for i in range(self.img_names):
+
+            for i in range(len(self.img_names)):
                 img_name = self.img_names[i]
                 img_refs = []
-                for ir in range(self.img_names):
-                    if i == ir:
-                        continue
-                    elif img_name[:5] == self.img_names[ir][:5]:
+                range_ref = [max(0,i-10), min(len(self.img_names)-1,i+10)]
+                for ir in range(range_ref[0],range_ref[1]):
+                    if i != ir and img_name[:5] == self.img_names[ir][:5]:
                         img_refs.append(self.img_names[ir])
                 self.img_names_ref.append(img_refs)       
+
+            # check ref list
+            for i, img_name_ref in enumerate(self.img_names_ref):
+                if len(img_name_ref) == 0:
+                    self.img_names_ref[i].append(self.img_names[i])
+
+        # reshape dataset length for multi-gpu
+        # batch_size = cfg.TRAIN.BATCH_SIZE
+        # batch_size = cfg.TRAIN.BATCH_SIZE * 4
+        batch_size = 4
+        cur_len = len(self.img_names)
+        tar_len = cur_len + batch_size - np.mod(cur_len, batch_size)
+        self.img_names = np.resize(self.img_names, tar_len)
+        self.img_names_ref = np.resize(self.img_names_ref, tar_len)
+            
+        if cfg.VERBOSE:
+            print("image names", self.img_names[:100], 
+                  "ignore part of list, because it is too long." if len(self.img_names)>100 else "")
+            print("image num ", len(self.img_names))
+           
 
     def __len__(self):
         return len(self.img_names)
@@ -157,16 +184,16 @@ class DPViewDataset():
     def __getitem__(self, idx):
         if self.is_train:                    
             # get referred img key
-            # to-do 0819 check bug
             img_name = self.img_names[idx]
-            view_data = load_view(img_name)
+            view_data = self.load_view(img_name)
             if not self.is_pairwise:
-                return {'img': view_data['img'],'uv_map': view_data['uvmap'],'mask': view_data['mask'])
+                return {'img': view_data['img'],'uv_map': view_data['uv_map'],'mask': view_data['mask']}
             else:
-                img_name_ref = random.randint(0, len(self.img_names_ref[idx]))
-                view_ref_data = load_view(img_name_ref)
-                return {'img': view_data['img'],'uv_map': view_data['uvmap'],'mask': view_data['mask'],
-                        'img_ref': view_ref_data['img'],'uv_map_ref': view_ref_data['uvmap'],'mask_ref': view_ref_data['mask']}
+                img_idx_ref = random.randint(0, len(self.img_names_ref[idx])-1)
+                img_name_ref = self.img_names_ref[idx][img_idx_ref]
+                view_ref_data = self.load_view(img_name_ref)
+                return {'img': view_data['img'],'uv_map': view_data['uv_map'],'mask': view_data['mask'],
+                        'img_ref': view_ref_data['img'],'uv_map_ref': view_ref_data['uv_map'],'mask_ref': view_ref_data['mask']}
         else:
             img_key = os.path.splitext(self.img_names[idx])[0]
             img_path = os.path.join(self.img_dir, self.img_names[idx])

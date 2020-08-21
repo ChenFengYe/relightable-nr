@@ -628,20 +628,27 @@ class AttentionUnet(Unet):
                          num_down,
                          max_channels,
                          use_dropout,
-                         upsampling_mode='transpose',
-                         dropout_prob=0.1,
-                         norm=nn.BatchNorm2d,
-                         outermost_linear=False,
-                         out_channels_gcn = 512,
-                         use_gcn = True,
-                         outermost_highway_mode = 'no_highway')
+                         upsampling_mode,
+                         dropout_prob,
+                         norm,
+                         outermost_linear,
+                         out_channels_gcn,
+                         use_gcn,
+                         outermost_highway_mode)
         # attention layer
         out_channels_att = 1
-        self.out_layer_att = [Conv2dSame(nf0,
+        self.out_layer_att = [Conv2dSame(nf0*2,
                                         out_channels_att,
                                         kernel_size=3,
                                         bias=outermost_linear or (norm is None))]
+        if not outermost_linear:
+            if norm is not None:
+                self.out_layer_att += [norm(out_channels_att, affine=True)]
+            self.out_layer_att += [nn.ReLU(True)]
 
+            if use_dropout:
+                self.out_layer_att += [nn.Dropout2d(dropout_prob)]
+        self.out_layer_att = nn.Sequential(*self.out_layer_att)
 
     def forward(self, x, v_fea):
         in_layer = self.in_layer(x)
