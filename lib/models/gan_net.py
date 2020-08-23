@@ -29,6 +29,11 @@ class Pix2PixModel(torch.nn.Module):
 
         # Generator
         self.netG = FeaturePairNet(cfg=cfg)
+        
+        self.netG = network.init_net(net = self.netG,
+                         init_type = cfg.MODEL.NET_D.INIT_TYPE,
+                         init_gain = cfg.MODEL.NET_D.INIT_GAIN,
+                         gpu_ids = cfg.GPUS)
 
         # Discriminator
         if self.isTrain: 
@@ -75,25 +80,28 @@ class Pix2PixModel(torch.nn.Module):
         return next(iter(devices))
 
     def get_atalas(self):
-        return self.netG.get_atalas()
-
-    # def get_atalas(self, ref_tex, neural_tex, att_neural_tex):
-    #     atalas = torch.cat((ref_tex.permute(0,3,1,2)[:, 0:3, :, :], 
-    #                         neural_tex[:, 0:3, :, :],
-    #                         att_neural_tex[:, 0:3, :, :],), dim=0)
-    #     return atalas.clone().detach().cpu()
+        # net = self.netG
+        # if isinstance(net, torch.nn.DataParallel):
+        #     net = net.module
+        # # self.atlas = net.atlas
+        # self.atlas = net.get_atalas()
+        atlas= torch.cat((self.fake_out[:,6:9,:,:],
+                               self.fake_out[:,9:12,:,:],
+                               self.fake_out[:,12:15,:,:]), dim=0)
+        return atlas
 
     def forward(self, input):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_out = self.netG(input)  # G(A)
+        self.fake_out  = self.netG(input)  # G(A)
 
         if self.isTrain:
-            alpha_map = input['mask'][:,None,:,:].cuda()
-            self.fake_out = self.fake_out * alpha_map
+            alpha_map = input['mask'][:,None,:,:].to(self.device)
+            self.fake_out[:, 0:6, : ,:] = self.fake_out[:, 0:6, : ,:] * alpha_map
             self.real_B = self.real_B * alpha_map
                 
         self.fake_B = self.fake_out[:, 0:3, : ,:]
-        self.fake_tex = self.fake_out[:, 3:6, : ,:]
+        # self.fake_tex_B = self.fake_out[:, 3:6, : ,:]
+        # self.fake_atlas = self.fake_out[:, 3:6, : ,:]
 
     def backward_D(self):
         """Calculate GAN loss for the discriminator"""

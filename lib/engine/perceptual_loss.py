@@ -63,6 +63,7 @@ class PerceptualLoss(torch.nn.Module):
         #self.model.load_state_dict(torch.load('/data/wmy/NR/models/resnet50_lpf5.pth.tar')['state_dict'])
         self.model = LossNetwork()
         self.model.cuda()
+        # self.model.to(cfg.GPUS[0])
         self.model.eval()
         self.mse_loss = torch.nn.MSELoss(reduction='mean')
         if cfg.LOSS.PERCEPTUALLOSS == "L1":
@@ -70,7 +71,11 @@ class PerceptualLoss(torch.nn.Module):
         else:
             self.loss = torch.nn.MSELoss(reduction='mean')
 
-    def forward(self, x, target):
+    def forward(self, x_device, target_device):
+        device = x_device.get_device()
+        x = x_device.cuda()
+        target = target_device.cuda()
+
         x_feature = self.model(x[:,0:3,:,:])
         target_feature = self.model(target[:,0:3,:,:])
 
@@ -87,5 +92,5 @@ class PerceptualLoss(torch.nn.Module):
         if x.size(1)>3:
             feature_loss = feature_loss + (self.loss(x_mask_feature.relu1,target_mask_feature.relu1)+self.loss(x_mask_feature.relu2,target_mask_feature.relu2))/2.0
 
-        loss = feature_loss + self.loss(x,target)
-        return loss
+        loss = feature_loss + self.loss(x,target).cuda()
+        return loss.to(device)

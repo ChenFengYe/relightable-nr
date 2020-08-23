@@ -1,13 +1,13 @@
 AUTO_RESUME: True
-GPUS: 0,
-DIST_URL: 'tcp://127.0.0.1:23457'
+GPUS: 1,2,3
+DIST_URL: 'tcp://127.0.0.1:23458'
 VERBOSE: True
 
 LOG:
   CFG_NAME: 200821_DF_GAN_feature_pair_net.yaml
   LOG_DIR: log
-  PRINT_FREQ: 200
-  CHECKPOINT_FREQ: 2000
+  PRINT_FREQ: 2000
+  CHECKPOINT_FREQ: 5000
 DATASET:
   DATASET: DPViewDataset # DomeViewDataset DPiewDataset
 
@@ -69,8 +69,8 @@ LOSS:
     WEIGHT_HSV: 0.0
     WEIGHT_ATLAS: 1.0
 TRAIN:
-  EXP_NAME: 'GAN_DFAll_texCh16_fePair_texLoss1_perLoss10_dataNotAug'
-  BATCH_SIZE: 4
+  EXP_NAME: 'GAN_FixLoss_DFAll_texCh16_fePair_texLoss1_perLoss10_dataNotAug'
+  BATCH_SIZE: 8 
   BEGIN_EPOCH: 0
   RESUME: False
   CHECKPOINT: ''
@@ -80,11 +80,10 @@ TRAIN:
   SHUFFLE: True
 
   LR: 0.0002
-  LR_FACTOR: 0.5
+  LR_FACTOR: 0.5        # MOMENTUM
   LR_STEP: [100, 200]
   OPTIMIZER: adam
-  MOMENTUM: 0.9
-  WD: 0.0001
+
 TEST:
   BATCH_SIZE: 4
   FRAME_RANGE: [30,40,55,60,70,85,90,100,105,120,130,140,149]
@@ -92,7 +91,7 @@ TEST:
   CALIB_PATH: '_/test_calib/calib.mat'
   SAMPLING_PATTERN: 'all'
   MODEL_PATH: './log/08-02_17-27-44_skipinv_10_chenxin_zhen_try_new/model_epoch_11999_iter_60000_.pth'
-  SAVE_FOLDER: '200803_test_images'
+  SAVE_FOLDER: '200822_test'
 #  IMAGES_PER_GPU: 1
 #  SCALE_FACTOR: [1]
 DEBUG:

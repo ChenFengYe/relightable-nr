@@ -8,6 +8,7 @@ from torch.nn import functional as F
 class MultiLoss(nn.Module):
     def __init__(self, cfg):
         super(MultiLoss, self).__init__()
+        self.w_per = cfg.LOSS.WEIGHT_PERCEPTUAL
         self.w_atlas = cfg.LOSS.WEIGHT_ATLAS
         self.w_hsv = cfg.LOSS.WEIGHT_HSV        
 
@@ -30,7 +31,7 @@ class MultiLoss(nn.Module):
         # loss = self.loss_atlas
 
         output_img = input[:,0:3,:,:]
-        self.loss_rgb = self.criterionL1_per(output_img, target)
+        self.loss_rgb = self.w_per * self.criterionL1_per(output_img, target)
         # self.loss_hsv = self.w_hsv * self.criterionL1_hsv(output_img, target)         
         if input.shape[1] > 3:
             atlas_rgb_layer = input[:,3:6,:,:] 

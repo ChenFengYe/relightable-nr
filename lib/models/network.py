@@ -23,8 +23,8 @@ class TextureCreater(nn.Module):
                 fix_texture = True):
         super(TextureCreater, self).__init__()
 
-        self.register_buffer('texture_size', torch.tensor(texture_size))
-        self.register_buffer('texture_num_ch', torch.tensor(texture_num_ch))
+        self.texture_size = texture_size
+        self.texture_num_ch = texture_num_ch
         
         # texture = torch.ones(1, texture_size, texture_size, self.texture_num_ch, dtype = torch.float32)
         # self.texture = texture
@@ -40,7 +40,7 @@ class TextureCreater(nn.Module):
         texture_size: S
         return: [N, S, S, C], C == 3
         '''        
-        texture_size = np.round(self.texture_size.cpu().numpy()).astype(np.int)
+        texture_size = self.texture_size
 
         # upsize img uv_map
         if False:
@@ -1079,7 +1079,8 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
     if len(gpu_ids) > 0:
         assert(torch.cuda.is_available())
         net.to(gpu_ids[0])
-        net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
+        if len(gpu_ids) > 1:
+            net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
     init_weights(net, init_type, init_gain=init_gain)
     return net        
 

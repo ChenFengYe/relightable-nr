@@ -40,8 +40,8 @@ def main():
 
     print('Set gpus...' + str(cfg.GPUS)[1:-1])
     print(' Batch size: '+ str(cfg.TRAIN.BATCH_SIZE))
-    if not cfg.GPUS == 'None':        
-        os.environ["CUDA_VISIBLE_DEVICES"]=str(cfg.GPUS)[1:-1]
+    # if not cfg.GPUS == 'None':        
+    # os.environ["CUDA_VISIBLE_DEVICES"]=str(cfg.GPUS)[1:-1]
 
     # import pytorch after set cuda
     import torch
@@ -78,7 +78,8 @@ def main():
     print("*" * 100)
 
     print('Build Network...')
-    gpu_count = torch.cuda.device_count()
+    # gpu_count = torch.cuda.device_count()
+    gpu_count = len(cfg.GPUS)
     
     dist.init_process_group(
         backend='nccl',
@@ -88,14 +89,15 @@ def main():
     )    
     model_net = eval(cfg.MODEL.NAME)(cfg)
 
-    if gpu_count > 1:
-        model_net.cuda()
-        model = torch.nn.parallel.DistributedDataParallel(
-            model_net, device_ids=list(cfg.GPUS)
-            #, find_unused_parameters = True
-        )
-    elif gpu_count == 1:
-        model = model_net.cuda()
+    # if gpu_count > 1:
+    #     model_net.cuda()
+    #     model = torch.nn.parallel.DistributedDataParallel(
+    #         model_net, device_ids=list(cfg.GPUS)
+    #         #, find_unused_parameters = True
+    #     )
+    # elif gpu_count == 1:
+    # model = model_net.cuda()
+    model = model_net
 
     if checkpoint_path:
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
@@ -137,9 +139,9 @@ def main():
         for view_data in view_dataloader:
             model.optimize_parameters(view_data)
 
-            img_gt = view_data['img'].cuda()
-            alpha_map = view_data['mask'][:,None,:,:].cuda()
-            uv_map = view_data['uv_map'].cuda()
+            img_gt = view_data['img']
+            alpha_map = view_data['mask'][:,None,:,:]
+            uv_map = view_data['uv_map']
             ROI = None
             
             # chcek gradiant
@@ -149,7 +151,7 @@ def main():
                     if param.grad is None:
                         print(name, True if param.grad is not None else False)
 
-            outputs = model_net.fake_out
+            outputs = model_net.fake_out.clone().detach().cpu()
             outputs_img = outputs[:, 0:3, : ,:]
             neural_img = outputs[:, 3:6, : ,:]
             aligned_uv = None
@@ -163,7 +165,7 @@ def main():
 
             # viso
             if not iter % cfg.LOG.PRINT_FREQ:
-                img_ref = view_data['img_ref'].cuda()
+                img_ref = view_data['img_ref']
                 vis.writer_add_image(writer, iter, epoch, img_gt, outputs_img, neural_img, uv_map, aligned_uv, atlas, img_ref)
 
             # Log
@@ -176,7 +178,7 @@ def main():
             iter += 1           
             start = time.time()
 
-            if iter % cfg.LOG.CHECKPOINT_FREQ==0 and iter!=0:
+            if iter % cfg.LOG.CHECKPOINT_FREQ==0:
                 final_output_dir = os.path.join(log_dir, 'model_epoch_%d_iter_%s_.pth' % (epoch, iter))
                 is_best_model = False
                 save_checkpoint({

@@ -40,17 +40,18 @@ class FeaturePairNet(torch.nn.Module):
                             .format(len(devices)))
         return next(iter(devices))
 
-    def get_atalas(self):
-        atalas = torch.cat((self.ref_tex.permute(0,3,1,2)[:, 0:3, :, :], 
-                            self.neural_tex[:, 0:3, :, :],
-                            self.att_neural_tex[:, 0:3, :, :],), dim=0)
-        return atalas.clone().detach().cpu()
-
-    # def get_atalas(self, ref_tex, neural_tex, att_neural_tex):
-    #     atalas = torch.cat((ref_tex.permute(0,3,1,2)[:, 0:3, :, :], 
-    #                         neural_tex[:, 0:3, :, :],
-    #                         att_neural_tex[:, 0:3, :, :],), dim=0)
+    # def get_atalas(self):
+    #     atalas = torch.cat((self.ref_tex.permute(0,3,1,2)[:, 0:3, :, :], 
+    #                         self.neural_tex[:, 0:3, :, :],
+    #                         self.att_neural_tex[:, 0:3, :, :],), dim=1)
     #     return atalas.clone().detach().cpu()
+
+    def get_atalas(self, ref_tex, neural_tex, att_neural_tex):
+        atalas = torch.cat((ref_tex.permute(0,3,1,2)[:, 0:3, :, :], 
+                            neural_tex[:, 0:3, :, :],
+                            att_neural_tex[:, 0:3, :, :],), dim=1)
+        # return atalas.clone().detach().cpu()
+        return atalas
 
     def forward(self, view_data, is_train=True):
         # setup data
@@ -60,18 +61,19 @@ class FeaturePairNet(torch.nn.Module):
 
         # forward
         if is_train:
-            self.ref_tex = self.texture_creater(img_ref, uv_map_ref)
+            ref_tex = self.texture_creater(img_ref, uv_map_ref)
             
-            self.neural_tex, attention_map = self.att_feature_module(self.ref_tex.permute(0,3,1,2))
-            self.att_neural_tex = self.neural_tex * attention_map
+            neural_tex, attention_map = self.att_feature_module(ref_tex.permute(0,3,1,2))
+            att_neural_tex = neural_tex * attention_map
 
-            neural_img = self.texture_no_grad_mapper(uv_map=uv_map, neural_tex=self.att_neural_tex)
+            neural_img = self.texture_no_grad_mapper(uv_map=uv_map, neural_tex=att_neural_tex)
             outputs_img = self.render_module(neural_img)
             
         else:
             pass
 
-        outputs = torch.cat((outputs_img, neural_img), dim = 1)
+        atlas = self.get_atalas(ref_tex, neural_tex, att_neural_tex)
+        outputs = torch.cat((outputs_img, neural_img[:,0:3,:,:], atlas), dim = 1)
 
         return outputs
 
