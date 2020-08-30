@@ -11,21 +11,12 @@ class FeaturePairNet(torch.nn.Module):
         # texture creater
         # self.texture_creater = network.TextureCreater(texture_size = cfg.MODEL.TEX_CREATER.NUM_SIZE,
         #                                         texture_num_ch = cfg.MODEL.TEX_CREATER.NUM_CHANNELS)
-
         # feature module
-        self.feature_module = network.FeatureModule(nf0 = cfg.MODEL.FEATURE_MODULE.NF0,
+        self.att_feature_module = network.AttentionFeatureModule(nf0 = cfg.MODEL.FEATURE_MODULE.NF0,
                                     in_channels = 3,
                                     out_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
                                     num_down_unet = cfg.MODEL.FEATURE_MODULE.NUM_DOWN,
                                     use_gcn = False)
-
-        # # feature module
-        # self.att_feature_module = network.AttentionFeatureModule(nf0 = cfg.MODEL.FEATURE_MODULE.NF0,
-        #                             in_channels = 3,
-        #                             out_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
-        #                             num_down_unet = cfg.MODEL.FEATURE_MODULE.NUM_DOWN,
-        #                             use_gcn = False)
-
         # texture mapper
         self.texture_no_grad_mapper = network.TextureNoGradMapper()
         # render net
@@ -49,9 +40,11 @@ class FeaturePairNet(torch.nn.Module):
     #                         self.att_neural_tex[:, 0:3, :, :],), dim=1)
     #     return atalas.clone().detach().cpu()
 
-    def get_atalas(self, ref_tex, neural_tex):
-        atalas = torch.cat((ref_tex[:, 0:3, :, :], 
-                            neural_tex[:, 0:3, :, :]), dim=1)
+    def get_atalas(self, ref_tex, neural_tex, att_neural_tex, attention_map):
+        atalas = torch.cat((ref_tex.permute(0,3,1,2)[:, 0:3, :, :], 
+                            neural_tex[:, 0:3, :, :],
+                            att_neural_tex[:, 0:3, :, :],
+                            attention_map), dim=1)
         # return atalas.clone().detach().cpu()
         return atalas
 
@@ -65,17 +58,19 @@ class FeaturePairNet(torch.nn.Module):
         # forward
         if 1: #is_train
             # ref_tex = self.texture_creater(img_ref, uv_map_ref)            
-            neural_tex = self.feature_module(ref_tex)
+            neural_tex, attention_map = self.att_feature_module(ref_tex)
+            att_neural_tex = neural_tex * attention_map
 
-            neural_img = self.texture_no_grad_mapper(uv_map=uv_map, neural_tex=neural_tex)
+            neural_img = self.texture_no_grad_mapper(uv_map=uv_map, neural_tex=att_neural_tex)
             outputs_img = self.render_module(neural_img)            
         else:
             pass
 
-        atlas = self.get_atalas(ref_tex, neural_tex)
-        outputs = {'img_rs':outputs_img, 'tex_rs':neural_tex[:,0:3,:,:], 'nimg_rs':neural_img[:,0:3,:,:],
-                   'atlas':atlas, 'ref_tex':ref_tex}
-        # outputs = torch.cat((outputs_img, neural_tex, atlas), dim = 1)        
+        atlas = self.get_atalas(ref_tex, neural_tex, att_neural_tex, attention_map)
+        # outputs = torch.cat((outputs_img, neural_img[:,0:3,:,:], atlas), dim = 1)
+        outputs = torch.cat((outputs_img, att_neural_tex[:,0:3,:,:], atlas), dim = 1)
+        
+        # to-do change to dict
         return outputs
 
     def parameters(self):
@@ -83,4 +78,4 @@ class FeaturePairNet(torch.nn.Module):
         # for part in self.part_list:
         #     params.extend(list(part.parameters()))
         # return params
-        return list(self.feature_module.parameters())+list(self.render_module.parameters())
+        return list(self.att_feature_module.parameters())+list(self.render_module.parameters())

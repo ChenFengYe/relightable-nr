@@ -33,7 +33,7 @@ class TextureCreater(nn.Module):
         # if fix_texture:
         #     self.texture.requires_grad = False
         
-    def forward(self, img, uv_map):
+    def forward(self, img, uv_map, interpolater='nearset'):
         '''
         img: [N, C, H, W], C == 3
         uv_map: [N, H, W, C], C == 2
@@ -65,7 +65,7 @@ class TextureCreater(nn.Module):
         texture = misc.interpolate_bilinear_inv(img_HR, sub_u, sub_v, texture_size)
 
         # fix hole
-        texture = misc.interpolate_atlas(texture)
+        texture = misc.interpolate_atlas_batch(texture, interpolater_mode = interpolater)
         
         return texture
 

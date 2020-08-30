@@ -14,39 +14,51 @@ class MultiLoss(nn.Module):
 
         self.loss_atlas = torch.tensor([0.0])
         self.loss_rgb = torch.tensor([0.0])
-        self.loss_hsv = torch.tensor([0.0])
+        # self.loss_hsv = torch.tensor([0.0])
         self.loss = torch.tensor([0.0])
+        self.loss_atlas_ref = torch.tensor([0.0])
+        self.loss_atlas_tar = torch.tensor([0.0])
 
         # loss 1 - rgb
         # self.criterionL1 = torch.nn.L1Loss(reduction='mean')
-        self.criterionL1_per = PerceptualLoss(cfg)
+        self.L1_per = PerceptualLoss(cfg)
         # loss 2 - hsv
-        self.criterionL1_hsv = HSVLoss()
+        self.L1_hsv = HSVLoss()
         # loss 3 - atalas
-        self.criterionL1_atlas = TexRGBLoss()
+        self.L1_atlas_ref = TexRGBLoss()
+        self.L1_atlas_tar = TexRGBLoss()
 
-    def forward(self, input, target):
-        # atlas_rgb_layer = input[:,3:6,:,:] 
-        # self.loss_atlas = self.w_hsv * self.criterionL1_atlas(atlas_rgb_layer, target)         
-        # loss = self.loss_atlas
+    def forward(self, input, target):        
+        # loss persepetual
+        output_img = input['img_rs']
+        self.loss_rgb = self.w_per * self.L1_per(output_img, target['img'])
 
-        output_img = input[:,0:3,:,:]
-        self.loss_rgb = self.w_per * self.criterionL1_per(output_img, target)
-        # self.loss_hsv = self.w_hsv * self.criterionL1_hsv(output_img, target)         
-        if input.shape[1] > 3:
-            atlas_rgb_layer = input[:,3:6,:,:] 
-            self.loss_atlas = self.w_atlas * self.criterionL1_atlas(atlas_rgb_layer, target)         
-            # loss = self.loss_rgb + self.loss_hsv + self.loss_atlas
-            self.loss = self.loss_rgb + self.loss_atlas
-        else:
-            self.loss = self.loss_rgb + self.loss_hsv
+        # loss Atlas
+        if 'tex_rs' in input:
+            atlas_rgb = input['tex_rs'] 
+            gt_tex_ref = target['tex_ref']
+            gt_tex_tar = target['tex']
+
+            mask_ref = (gt_tex_ref != 0).int().float()
+            mask_tar = (gt_tex_tar != 0).int().float()
+            self.loss_atlas_ref = self.L1_atlas_ref(atlas_rgb*mask_ref, gt_tex_ref)
+            self.loss_atlas_tar = self.L1_atlas_tar(atlas_rgb*mask_tar, gt_tex_tar)
+            self.loss_atlas = self.w_atlas * (self.loss_atlas_ref + self.loss_atlas_tar)
+
+        # loss hsv
+        # self.loss_hsv = self.w_hsv * self.L1_hsv(output_img, target)         
+
+        # all
+        self.loss = self.loss_rgb + self.loss_atlas
         return self.loss
     
     def loss_list(self): 
         loss_list ={'Loss':self.loss,
                     'rgb':self.loss_rgb,
                     'hsv':self.loss_hsv,
-                    'atlas':self.loss_atlas}
+                    'atlas':self.loss_atlas,
+                    'atlas_ref':self.loss_atlas_ref,
+                    'atlas_tar':self.loss_atlas_tar}
         return loss_list
 
 '''

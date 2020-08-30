@@ -45,7 +45,7 @@ def create_logger(cfg, cfg_path):
              epoch = nums[0] + 1
              iter = nums[1] + 1
         elif cfg.MODEL.PRETRAINED:
-            checkpoint_path = cfg.MODEL.PRETRAIN
+            checkpoint_path = cfg.MODEL.PRETRAINED
             
     log_dir = os.path.join(cfg.LOG.LOGGING_ROOT, dir_name)
     cond_mkdir(log_dir)

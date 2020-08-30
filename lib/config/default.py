@@ -33,6 +33,10 @@ _C.LOG.CHECKPOINT_FREQ = 100
 _C.DATASET = CN()
 _C.DATASET.DATASET = 'realdome_cx'
 _C.DATASET.DATASET_TEST = 'realdome_cx'
+
+_C.DATASET.GEN_TEX = False
+_C.DATASET.TEX_INTERPOLATER = 'nearest'
+
 _C.DATASET.ROOT = 'data/realdome_cx'    # Root folder for img_dir and mesh_dir
 _C.DATASET.FRAME_RANGE = [0,100]
 _C.DATASET.CAM_RANGE = [0,100]
@@ -121,6 +125,7 @@ _C.TRAIN.RESUME = False
 _C.TRAIN.SAMPLING_PATTERN = 'skipinv_10'         # Sampling of image training sequences_C.TRAIN.CHECKPOINT = ''
 _C.TRAIN.SAMPLING_PATTERN_VAL = 'skip_10'
 _C.TRAIN.SAMPLING_PAIRWISE = False
+_C.TRAIN.SAMPLING_PAIRMODE = 'all'
 _C.TRAIN.CHECKPOINT = ''
 _C.TRAIN.CHECKPOINT_DIR = ''
 _C.TRAIN.CHECKPOINT_NAME = ''
@@ -145,7 +150,7 @@ _C.LOSS.WEIGHT_ATLAS = 1.0
 _C.TEST = CN()
 _C.TEST.BATCH_SIZE = 3
 _C.TEST.FRAME_RANGE = [0,100]
-_C.TEST.CALIB_PATH = '_/test_calib/calib.mat'
+_C.TEST.CALIB_PATH = '_/calib.mat'
 _C.TEST.CALIB_DIR = ''
 _C.TEST.CALIB_NAME = ''
 _C.TEST.SAMPLING_PATTERN = 'all'            # Sampling of image testing sequences

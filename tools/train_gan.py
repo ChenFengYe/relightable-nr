@@ -71,38 +71,30 @@ def main():
     print("*" * 100)
 
     print("Build dataloader ...")
-    view_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg, is_train=True)
+    view_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg, isTrain=True)
     if cfg.TRAIN.VAL_FREQ > 0:
         print("Build val dataloader ...")
-        view_val_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg, is_train=False)
+        view_val_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg, isTrain=False)
     print("*" * 100)
 
     print('Build Network...')
     # gpu_count = torch.cuda.device_count()
-    gpu_count = len(cfg.GPUS)
-    
+    gpu_count = len(cfg.GPUS)    
     dist.init_process_group(
         backend='nccl',
         init_method=cfg.DIST_URL,
         world_size=cfg.WORLD_SIZE,
         rank=cfg.RANK
     )    
-    model_net = eval(cfg.MODEL.NAME)(cfg)
 
-    # if gpu_count > 1:
-    #     model_net.cuda()
-    #     model = torch.nn.parallel.DistributedDataParallel(
-    #         model_net, device_ids=list(cfg.GPUS)
-    #         #, find_unused_parameters = True
-    #     )
-    # elif gpu_count == 1:
-    # model = model_net.cuda()
+    model_net = eval(cfg.MODEL.NAME)(cfg)
     model = model_net
+    model.setup(cfg)
 
     if checkpoint_path:
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
-        iter_init = checkpoint['iter']
-        epoch_begin = checkpoint['epoch']
+        # iter_init = checkpoint['iter']
+        # epoch_begin = checkpoint['epoch']
         # to-do try directly load optimizer state_dict with same load_state_dict
         model_net.load_optimizer_state_dict(checkpoint['optimizer'])
         model_net.load_state_dict(checkpoint['state_dict'])
@@ -128,7 +120,6 @@ def main():
     writer = SummaryWriter(log_dir)
     
     print('Begin training...  Log in ' + log_dir)
-    model.setup(cfg)
     model.train()
 
     start = time.time()
@@ -142,7 +133,6 @@ def main():
             img_gt = view_data['img']
             alpha_map = view_data['mask'][:,None,:,:]
             uv_map = view_data['uv_map']
-            ROI = None
             
             # chcek gradiant
             if iter == iter_init:
@@ -151,12 +141,9 @@ def main():
                     if param.grad is None:
                         print(name, True if param.grad is not None else False)
 
-            outputs = model_net.fake_out.clone().detach().cpu()
-            outputs_img = outputs[:, 0:3, : ,:]
-            neural_img = outputs[:, 3:6, : ,:]
-            aligned_uv = None
-            # aligned_uv = outputs[:, -2:, : ,:]
-            atlas = model_net.get_atalas()
+            outputs = model_net.get_current_results()
+            outputs_img = outputs['img_rs']
+            # neural_img = outputs['nimg_rs'].clone().detach().cpu()
             
             # Metrics
             log_time = datetime.datetime.now().strftime('%m/%d') + '_' + datetime.datetime.now().strftime('%H:%M:%S') 
@@ -165,8 +152,7 @@ def main():
 
             # viso
             if not iter % cfg.LOG.PRINT_FREQ:
-                img_ref = view_data['img_ref']
-                vis.writer_add_image(writer, iter, epoch, img_gt, outputs_img, neural_img, uv_map, aligned_uv, atlas, img_ref)
+                vis.writer_add_image_gan(writer, iter, epoch, inputs=view_data, results=outputs)
 
             # Log
             loss_list = model_net.get_current_losses()
@@ -186,7 +172,7 @@ def main():
                     'iter': iter + 1,
                     'model': cfg.MODEL.NAME,
                     'state_dict': model_net.state_dict(),
-                    'atlas': atlas,
+                    # 'atlas': atlas,
                     'optimizer': model_net.optimizer_state_dict()
                     # 'best_state_dict': model.module.state_dict(),
                     # 'perf': perf_indicator,
@@ -221,7 +207,7 @@ def main():
                 #                 # ROI = None
 
 
-                #                 outputs = model.forward(view_data, is_train=False)
+                #                 outputs = model.forward(view_data, isTrain=False)
                                 
                 #                 outputs_img = outputs[:, 0:3, : ,:]
                 #                 neural_img = outputs[:, 3:6, : ,:]

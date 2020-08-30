@@ -15,12 +15,12 @@ class Pix2PixModel(torch.nn.Module):
 
         self.cfg = cfg
         self.device = torch.device('cuda:{}'.format(cfg.GPUS[0]))
-        self.isTrain = cfg
+        self.isTrain = isTrain
         self.model_names = []
         self.visual_names = []
         self.optimizers = []
 
-        self.loss_names = ['G_GAN', 'G_Multi', 'G_per', 'G_atlas', 'D_real', 'D_fake']
+        self.loss_names = ['D_real', 'D_fake', 'G_GAN', 'G_Multi', 'G_per', 'G_atlas_ref', 'G_atlas_tar']
         self.visual_names = ['real_A', 'fake_B', 'real_B']        
         if self.isTrain:
             self.model_names = ['G', 'D']
@@ -51,12 +51,11 @@ class Pix2PixModel(torch.nn.Module):
             self.criterionMulti = MultiLoss(cfg)
 
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
-            self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=cfg.TRAIN.LR, betas=(cfg.TRAIN.LR_FACTOR, 0.999))
-            self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=cfg.TRAIN.LR, betas=(cfg.TRAIN.LR_FACTOR, 0.999))
+            self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=cfg.TRAIN.LR)
+            self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=cfg.TRAIN.LR)
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
 
-    # to-do 0821
     def set_input(self, input):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
         Parameters:
@@ -69,7 +68,10 @@ class Pix2PixModel(torch.nn.Module):
         # self.image_paths = input['A_paths' if AtoB else 'B_paths']            
 
         self.real_A = input['img_ref'].to(self.device)
-        self.real_B = input['img'].to(self.device)
+        self.real_ATex = input['tex_ref'].to(self.device)
+        if self.isTrain:
+            self.real_B = input['img'].to(self.device)
+            self.real_BTex = input['tex_tar'].to(self.device)
         
     def devices(self):
         devices = ({param.device for param in self.parameters()} |
@@ -85,9 +87,9 @@ class Pix2PixModel(torch.nn.Module):
         #     net = net.module
         # # self.atlas = net.atlas
         # self.atlas = net.get_atalas()
-        atlas= torch.cat((self.fake_out[:,6:9,:,:],
-                               self.fake_out[:,9:12,:,:],
-                               self.fake_out[:,12:15,:,:]), dim=0)
+        atlas= torch.cat((self.fake_out['ref_tex'],
+                          self.fake_out['tex_rs'],
+                          self.real_BTex.permute(0,3,1,2)), dim=0)
         return atlas
 
     def forward(self, input):
@@ -96,12 +98,12 @@ class Pix2PixModel(torch.nn.Module):
 
         if self.isTrain:
             alpha_map = input['mask'][:,None,:,:].to(self.device)
-            self.fake_out[:, 0:6, : ,:] = self.fake_out[:, 0:6, : ,:] * alpha_map
+            # to-do change to dict
+            self.fake_out['img_rs'] = self.fake_out['img_rs'] * alpha_map
+            self.fake_out['nimg_rs'] = self.fake_out['nimg_rs'] * alpha_map
             self.real_B = self.real_B * alpha_map
                 
-        self.fake_B = self.fake_out[:, 0:3, : ,:]
-        # self.fake_tex_B = self.fake_out[:, 3:6, : ,:]
-        # self.fake_atlas = self.fake_out[:, 3:6, : ,:]
+        self.fake_B = self.fake_out['img_rs']
 
     def backward_D(self):
         """Calculate GAN loss for the discriminator"""
@@ -125,11 +127,12 @@ class Pix2PixModel(torch.nn.Module):
         self.loss_G_GAN = self.criterionGAN(pred_fake, True)
         # Second, G(A) = B
         ##################################################################
-        # to-do 0821 give a better design
-        self.loss_G_Multi = self.criterionMulti(self.fake_out, self.real_B)
+        gt_set = {'img':self.real_B, 'tex':self.real_BTex, 'tex_ref':self.real_ATex}
+        self.loss_G_Multi = self.criterionMulti(self.fake_out, gt_set)
         # for vis
         self.loss_G_per = self.criterionMulti.loss_rgb
-        self.loss_G_atlas = self.criterionMulti.loss_atlas
+        self.loss_G_atlas_ref = self.criterionMulti.loss_atlas_ref
+        self.loss_G_atlas_tar = self.criterionMulti.loss_atlas_tar
         ##################################################################
         # combine loss and calculate gradients
         self.loss_G = self.loss_G_GAN + self.loss_G_Multi
@@ -158,6 +161,15 @@ class Pix2PixModel(torch.nn.Module):
         #     load_suffix = 'iter_%d' % opt.load_iter if opt.load_iter > 0 else opt.epoch
         #     self.load_networks(load_suffix)
         self.print_networks(cfg.VERBOSE)
+
+    def test(self, input):
+        """Forward function used in test time.
+        This function wraps <forward> function in no_grad() so we don't save intermediate steps for backprop
+        It also calls <compute_visuals> to produce additional visualization results
+        """
+        with torch.no_grad():
+            self.forward(input)
+            # self.compute_visuals()
 
     def print_networks(self, verbose):
         """Print the total number of parameters in the network and (if verbose) network architecture
@@ -247,6 +259,12 @@ class Pix2PixModel(torch.nn.Module):
             if isinstance(name, str):
                 visual_ret[name] = getattr(self, name)
         return visual_ret
+
+    def get_current_results(self):
+        results = {}
+        for key, value in self.fake_out.items():
+            results[key] = value.clone().detach().cpu()
+        return results
 
     def get_current_losses(self):
         """Return traning losses / errors. train.py will print out these errors on console, and save them to a file"""

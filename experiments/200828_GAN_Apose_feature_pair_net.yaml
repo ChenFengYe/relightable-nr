@@ -4,18 +4,17 @@ DIST_URL: 'tcp://127.0.0.1:23458'
 VERBOSE: True
 
 LOG:
-  CFG_NAME: 200821_DF_GAN_feature_pair_net.yaml
+  CFG_NAME: 200828_GAN_APose.yaml
   LOG_DIR: log
-  PRINT_FREQ: 500
-  CHECKPOINT_FREQ: 5000
+  PRINT_FREQ: 1000
+  CHECKPOINT_FREQ: 3000
 DATASET:
   DATASET: DPViewDataset # DomeViewDataset DPiewDataset
-
-  ROOT: 'data/densepose_deepfashion_all'
+  ROOT: 'data/200827_hnrd'
   FRAME_RANGE: [-1, -1]
   IMG_DIR: '*.jpg'
 
-  OUTPUT_SIZE: [256, 256]
+  OUTPUT_SIZE: [512, 512]
 
   GEN_TEX: True
   TEX_INTERPOLATER: 'linear'
@@ -28,7 +27,6 @@ DATASET:
   PRELOAD_MESHS: False
   PRELOAD_VIEWS: False  
 
-  # relight
   MAX_SHIFT: 0
   MAX_ROTATION: 0
   MAX_SCALE: 1.0
@@ -43,14 +41,14 @@ MODEL:
   PRETRAINED: ''
   TEX_CREATER:
     NUM_CHANNELS: 3
-    NUM_SIZE: 256
+    NUM_SIZE: 512
   FEATURE_MODULE:
     NF0: 64
     NUM_DOWN: 5
     NUM_PARAMS: -1
   TEX_MAPPER:
     NUM_CHANNELS: 16
-    NUM_SIZE: 256
+    NUM_SIZE: 512
     MIPMAP_LEVEL: 1
     SH_BASIS: False
     MERGE_TEX: True
@@ -67,30 +65,29 @@ LOSS:
     WEIGHT_HSV: 0.0
     WEIGHT_ATLAS: 1.0
 TRAIN:
-  # EXP_NAME: 'GAN_FixLoss_DFAll_texCh16_fePair_texLoss1_perLoss10_dataNotAug'
-  EXP_NAME: 'GAN_atlas_two_gt_200830'
-  BATCH_SIZE: 8
+  EXP_NAME: 'NoAtt'
+  BATCH_SIZE: 4
   BEGIN_EPOCH: 0
   RESUME: False
   CHECKPOINT: ''
   END_EPOCH: 10000
   VAL_FREQ: -1
   SAMPLING_PAIRWISE: True
-  SAMPLING_PAIRMODE: 'DeepFashion'
+  SAMPLING_PAIRMODE: 'SDAP'
   SHUFFLE: True
 
   LR: 0.0002
   LR_FACTOR: 0.5        # MOMENTUM
   LR_STEP: [40, 100]
   OPTIMIZER: adam
-
+  
 TEST:
+  DATASET: DomeViewDataset
+  ROOT: 'data/white_walkshow'
   BATCH_SIZE: 10
   FRAME_RANGE: [-1,-1]
-  CALIB_PATH: '_/test_calib/calib.mat'
-  SAMPLING_PATTERN: 'all'
   MODEL_PATH: './log/08-02_17-27-44_skipinv_10_chenxin_zhen_try_new/model_epoch_11999_iter_60000_.pth'
-  SAVE_FOLDER: '200822_test'
+  SAVE_FOLDER: '200828_test'
 DEBUG:
   DEBUG: False
   SAVE_TRANSFORMED_IMG: False

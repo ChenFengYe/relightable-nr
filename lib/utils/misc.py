@@ -1,5 +1,7 @@
 import numpy as np
 import torch
+import cv2
+import scipy
 
 def interpolate_bilinear_inv(img, sub_u, sub_v, texture_size):
     '''
@@ -37,13 +39,48 @@ def interpolate_bilinear_inv(img, sub_u, sub_v, texture_size):
 
     return output.permute(0,2,3,1)
 
-def interpolate_atlas(tex, window_rate=0.06):
+def interpolate_atlas_batch(tex, window_rate=0.03, interpolater_mode ='nearest'):
     tex_size = tex.shape[2]
-    window_size = window_rate * tex_size
-    # to-do 0819
+    window_size = int(window_rate * tex_size)
+    if interpolater_mode == 'nearest':
+        interpolater = scipy.interpolate.NearestNDInterpolator
+    elif interpolater_mode == 'linear':
+        interpolater = scipy.interpolate.LinearNDInterpolator
+    else:
+        # interpolator=scipy.interpolate.RegularGridInterpolator
+        raise ValueError('Not support interpolater for tex  ' + interpolater_mode)
 
+    for ib in range(tex.shape[0]):
+        tex[ib, ...] = interpolate_scipy(tex[ib, ...], window_size, interpolater)
     return tex
 
+def interpolate_scipy(img, window_size = 10, interpolator = scipy.interpolate.NearestNDInterpolator):
+    target_for_interp = img.numpy().squeeze()
+
+    # dilate to img borders for boundary invalid regions
+    img_mask = target_for_interp!=0
+    kernel_tar = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (window_size, window_size))
+    mask_tar = cv2.dilate(img_mask.astype('uint8'), kernel_tar, borderType=cv2.BORDER_CONSTANT, borderValue=int(0))
+    mask_tar = (mask_tar!=0) * (~img_mask)
+
+    # dilate to mask borders around target regions (valid regions only)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    dilated_mask = cv2.dilate(mask_tar.astype('uint8'), kernel, borderType=cv2.BORDER_CONSTANT, borderValue=int(0))
+    mask_interp = dilated_mask *  img_mask
+    mask_interp = mask_interp.astype('bool')
+
+    # Interpolate only holes, only using these pixels
+    points = np.argwhere(mask_interp)
+    values = target_for_interp[mask_interp]
+
+    # check whether atlas only have too few points
+    if len(points) > 10:
+        if interpolator == scipy.interpolate.NearestNDInterpolator:
+            interp = interpolator(points, values)
+        elif interpolator == scipy.interpolate.LinearNDInterpolator:
+            interp = interpolator(points, values, fill_value=0)
+        target_for_interp[mask_tar] = interp(np.argwhere(mask_tar))
+    return torch.from_numpy(target_for_interp)
 
 def interpolate_bilinear(data, sub_x, sub_y):
     '''
