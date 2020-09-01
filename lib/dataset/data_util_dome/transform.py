@@ -14,6 +14,52 @@ from PIL import Image
 from utils.util import calc_center, rodrigues_rotation_matrix
 
 
+def uv_interpolation_single(singlemap, size, transform=None, interpolation=Image.NEAREST):
+    width, height = singlemap.width, singlemap.height
+    if transform is not None:
+        translation = transform['t']
+        rotation = transform['r']
+        ration = transform['s']
+        K = transform['K']
+        singlemap = T.functional.rotate(singlemap, angle=np.rad2deg(rotation), resample=interpolation, center=(K[0, 2], K[1, 2]))
+        singlemap = T.functional.affine(singlemap, angle=0, translate=translation, scale=1, shear=0)
+        singlemap = T.functional.crop(singlemap, 0, 0, int(height / ration), int(height * size[1] / ration / size[0]))
+    singlemap = T.functional.resize(singlemap, size, interpolation)
+    singlemap = T.functional.to_tensor(singlemap)
+    return singlemap
+
+def uv_interpolation_merge(map_linear, map_nearest, window_size):
+    '''
+    window_size means the window size in atlas space
+    '''    
+    # Ignore nonadjacent pixel
+    dists = (map_linear[0, ...]-map_nearest[0, ...])**2 + (map_linear[1, ...]-map_nearest[1, ...])**2
+    mask_val = dists > (window_size**2)
+    map_linear[:, mask_val] = map_nearest[:, mask_val]
+    
+    # Ignore boundary pixel
+    norm = map_nearest[0, ...]**2 + map_nearest[1, ...]**2
+    mask_background = norm == 0
+    map_linear[:, mask_background] = 0
+    
+    return map_linear
+
+def uv_interpolation(uvmap, window_size, size, transform=None):
+    u_map = Image.fromarray(uvmap[:,:,0].astype('float32'), mode = 'F')
+    v_map = Image.fromarray(uvmap[:,:,1].astype('float32'), mode = 'F')
+
+    u_map_linear = uv_interpolation_single(u_map, size, transform, Image.BILINEAR)
+    u_map_nearest = uv_interpolation_single(u_map, size, transform, Image.NEAREST)
+
+    v_map_linear = uv_interpolation_single(v_map, size, transform, Image.BILINEAR)
+    v_map_nearest = uv_interpolation_single(v_map, size, transform, Image.NEAREST)
+    
+    uvmap_linear = torch.cat((u_map_linear, v_map_linear), dim=0)
+    uvmap_nearest = torch.cat((u_map_nearest, v_map_nearest), dim=0)
+    uvmap = uv_interpolation_merge(uvmap_linear, uvmap_nearest, window_size)
+
+    return uvmap
+
 class RandomTransform(object):
     def __init__(self, size, max_shift = 0, max_scale = 0, max_rotation = 0, interpolation=Image.BICUBIC, isTrain = True, is_center = False):
         assert isinstance(size, int) or (isinstance(size, collections.abc.Iterable) and len(size) == 2)
@@ -27,11 +73,35 @@ class RandomTransform(object):
         self.max_rotation = max_rotation
         self.is_center = is_center
 
-    def __call__(self, img, K = None, Tc = None,  mask = None):
+    def __call__(self, img, K = None, Tc = None,  mask = None, uvmap=None):
 
         # change extrinsic from "world2cam" to "cam2world"
-        Tc = np.linalg.inv(Tc)
+        if img is not None:
+            width, height = img.size
+        elif uvmap is not None:
+            width, height = uvmap.shape[0:2]
 
+        if Tc is not None:
+            Tc = np.linalg.inv(Tc)
+            Tc = torch.from_numpy(Tc.astype(np.float32))
+
+        if K is not None:
+            K = torch.from_numpy(K.astype(np.float32))
+
+        if K == None:
+            K = np.eye(4)
+            # fx    cx
+            #    fy cy
+            #        1 
+            K[0,0] = width
+            K[1,1] = height
+            K[0,2] = width/2.
+            K[1,2] = height/2.
+
+        Tc = np.eye(4) if Tc == None else Tc
+
+        Tc = np.linalg.inv(Tc)
+        
         K = torch.from_numpy(K.astype(np.float32))
         Tc = torch.from_numpy(Tc.astype(np.float32))
 
@@ -97,6 +167,12 @@ class RandomTransform(object):
             mask = T.functional.resize(mask, self.size, self.interpolation)
             mask = T.functional.to_tensor(mask)
 
+        if uvmap is not None:
+            transform = {'t':translation,'r':rotation,'s':ration,'K':K}
+            window_rate = 0.05
+            window_size = 1.0*window_rate
+            uvmap = uv_interpolation(uvmap, window_size, self.size, transform)
+
         #K = K / m_scale
         #K[2,2] = 1
 
@@ -114,7 +190,7 @@ class RandomTransform(object):
 
         # change extrinsic from "cam2world" to "world2cam"
         Tc = np.linalg.inv(Tc)
-        return img, K, Tc, mask, ROI
+        return img, mask, uvmap, ROI, K, Tc
     
     def __repr__(self):
         return self.__class__.__name__ + '()'

@@ -41,9 +41,16 @@ class MultiLoss(nn.Module):
 
             mask_ref = (gt_tex_ref != 0).int().float()
             mask_tar = (gt_tex_tar != 0).int().float()
+
+            # # add loss 1
+            # zloss_L1(tex1, tex2)+loss_L1(tex2, tex1)
+            # xxxxxx
+
+
             self.loss_atlas_ref = self.L1_atlas_ref(atlas_rgb*mask_ref, gt_tex_ref)
             self.loss_atlas_tar = self.L1_atlas_tar(atlas_rgb*mask_tar, gt_tex_tar)
             self.loss_atlas = self.w_atlas * (self.loss_atlas_ref + self.loss_atlas_tar)
+
 
         # loss hsv
         # self.loss_hsv = self.w_hsv * self.L1_hsv(output_img, target)         

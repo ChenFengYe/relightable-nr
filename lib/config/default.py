@@ -176,10 +176,16 @@ def update_config(cfg, args):
     cfg.defrost()
     cfg.merge_from_file(args.cfg)
     cfg.merge_from_list(args.opts)
+    (cfg_path, cfg_name) = os.path.split(args.cfg)
 
     # Add path under root folder
     if cfg.TEST.CALIB_PATH and cfg.TEST.CALIB_PATH[:2] == '_/':
         cfg.TEST.CALIB_PATH = os.path.join(cfg.DATASET.ROOT, cfg.TEST.CALIB_PATH[2:])
+    
+    # find test model
+    if not os.path.exists(cfg.TEST.MODEL_PATH):
+        cfg.TEST.MODEL_PATH = os.path.join(cfg_path, cfg.TEST.MODEL_PATH)
+
     if cfg.TEST.MODEL_PATH and cfg.TEST.MODEL_PATH[:2] == '_/':
         cfg.TEST.MODEL_PATH = os.path.join(cfg.DATASET.ROOT, cfg.TEST.MODEL_PATH[2:])
     (cfg.TEST.CALIB_DIR, cfg.TEST.CALIB_NAME) = os.path.split(cfg.TEST.CALIB_PATH)
@@ -204,6 +210,8 @@ def update_config(cfg, args):
 
     if cfg.MODEL.PRETRAINED and cfg.MODEL.PRETRAINED[:2] == '_/':
         cfg.MODEL.PRETRAINED = os.path.join(cfg.DATASET.ROOT, cfg.MODEL.PRETRAINED[2:])
+    if not os.path.exists(cfg.TRAIN.CHECKPOINT):
+        cfg.TRAIN.CHECKPOINT = os.path.join(cfg_path, cfg.TRAIN.CHECKPOINT)
     if cfg.TRAIN.CHECKPOINT and cfg.TRAIN.CHECKPOINT[:2] == '_/':
         cfg.TRAIN.CHECKPOINT = os.path.join(cfg.DATASET.ROOT, cfg.TRAIN.CHECKPOINT[2:])
     if cfg.TRAIN.CHECKPOINT:    

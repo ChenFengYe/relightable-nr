@@ -230,18 +230,6 @@ class TextureNoGradMapper(nn.Module):
         output = output.permute(1,0,2,3) # to [N C H W]
         return output
 
-    def flatten_mipmap(self, start_ch, end_ch):
-        for ithLevel in range(self.mipmap_level):
-            if ithLevel == 0:
-                out = self.textures[ithLevel][..., start_ch:end_ch]
-            else:
-                out = out + torch.nn.functional.interpolate(self.textures[ithLevel][..., start_ch:end_ch].permute(0, 3, 1, 2),
-                    size = (self.textures_size[0], self.textures_size[0]),
-                    mode = 'bilinear',
-                    align_corners = True,
-                    ).permute(0, 2, 3, 1)
-        return out
-
 class Rasterizer(nn.Module):
     def __init__(self,
                 cfg, 
@@ -1233,12 +1221,12 @@ def get_scheduler(optimizer, cfg):
     """
     if cfg.TRAIN.LR_MODE == 'multistep': # same as linear 
         scheduler = lr_scheduler.MultiStepLR(optimizer, cfg.TRAIN.LR_STEP, cfg.TRAIN.LR_FACTOR)
-    elif cfg.TRAIN.LR_MODE == 'step':
-        scheduler = lr_scheduler.StepLR(optimizer, step_size=opt.lr_decay_iters, gamma=0.1)
-    elif cfg.TRAIN.LR_MODE == 'plateau':
-        scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, threshold=0.01, patience=5)
-    elif cfg.TRAIN.LR_MODE == 'cosine':
-        scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=opt.n_epochs, eta_min=0)
+    # elif cfg.TRAIN.LR_MODE == 'step':
+    #     scheduler = lr_scheduler.StepLR(optimizer, step_size=opt.lr_decay_iters, gamma=0.1)
+    # elif cfg.TRAIN.LR_MODE == 'plateau':
+    #     scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, threshold=0.01, patience=5)
+    # elif cfg.TRAIN.LR_MODE == 'cosine':
+    #     scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=opt.n_epochs, eta_min=0)
     else:
         return NotImplementedError('learning rate policy [%s] is not implemented', cfg.TRAIN.LR_MODE)
     return scheduler

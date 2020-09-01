@@ -194,8 +194,9 @@ class RandomTransform(object):
             window_rate = 0.05
             window_size = 1.0*window_rate
             uvmap = uv_interpolation(uvmap, window_size, self.size)
-            
-        return img, mask, uvmap, K, Tc
+
+        ROI = None
+        return img, mask, uvmap, ROI, K, Tc
 
     def __repr__(self):
         return self.__class__.__name__ + '()'

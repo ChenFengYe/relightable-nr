@@ -9,30 +9,25 @@ import scipy.io
 
 from dataset.data_util_dome.data_util import samping_img_set, glob_imgs, load_img
 from dataset.data_util_dome.transform import RandomTransform
+from dataset.data_util_densepose.uv_converter import TransferDenseposeUV, UVConverter
+from dataset.DPViewDataset import DPViewDataset
 
 import neural_renderer as nr
 
-class DomeViewDataset():
+from lib.models import network
+
+class DomeViewDataset(DPViewDataset):
     def __init__(self,
                  cfg,
-                #  root_dir,
-                #  calib_path,
-                #  calib_format,
-                #  sampling_pattern,
-                 is_train = True,
-                #  ignore_dist_coeffs = True,
-                #  precomp_high_dir = None,
-                #  precomp_low_dir = None,
-                #  preset_uv_path = None,
-                 ):
-        super().__init__()
+                 isTrain = True):
+        # super().__init__()
 
-        root_dir = cfg.DATASET.ROOT,
-        calib_path = cfg.DATASET.CALIB_PATH,
-        calib_format = cfg.DATASET.CALIB_FORMAT,
-        sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN,
-        precomp_high_dir = cfg.DATASET.PRECOMP_DIR,
-        precomp_low_dir = cfg.DATASET.PRECOMP_DIR,
+        root_dir = cfg.DATASET.ROOT
+        calib_path = cfg.DATASET.CALIB_PATH
+        calib_format = cfg.DATASET.CALIB_FORMAT
+        sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN
+        precomp_high_dir = cfg.DATASET.PRECOMP_DIR
+        precomp_low_dir = cfg.DATASET.PRECOMP_DIR
         preset_uv_path = cfg.DATASET.UV_PATH
         ignore_dist_coeffs = True
         
@@ -42,7 +37,7 @@ class DomeViewDataset():
         self.img_dir = cfg.DATASET.IMG_DIR
         self.img_size = list(cfg.DATASET.OUTPUT_SIZE)
         self.ignore_dist_coeffs = ignore_dist_coeffs
-        self.is_train = is_train
+        self.is_train = isTrain
 
         self.preset_uv_path = preset_uv_path
         self.precomp_high_dir = precomp_high_dir
@@ -114,7 +109,7 @@ class DomeViewDataset():
         # remove views without calibration result
         self.img_fp_all = img_fp_all_new
 
-        # Subsample data
+        # subsample data
         self.img_fp_all, self.poses_all, self.keep_idxs = samping_img_set(self.img_fp_all, self.poses_all, sampling_pattern)
         self.cam_idxs = np.array(self.cam_idxs)
         
@@ -143,12 +138,28 @@ class DomeViewDataset():
                                     cfg.DATASET.MAX_SCALE,
                                     cfg.DATASET.MAX_ROTATION)
         
+        # build raster
+        uv_template_path = self.cfg.DATASET.UV_PATH
+        self.init_rasterizer(uv_template_path, self.global_RT)
+
+        # build uv converter
+        self.uv_converter = UVConverter(cfg.DATASET.UV_CONVERTER)
+
+        if cfg.DATASET.GEN_TEX: # to-do generate tex 
+            from lib.models import network
+            self.texture_creater = network.TextureCreater(texture_size = cfg.MODEL.TEX_CREATER.NUM_SIZE,
+                                                    texture_num_ch = cfg.MODEL.TEX_CREATER.NUM_CHANNELS)       
+
+        if cfg.VERBOSE:
+            print("image names", self.img_fp_all[:100], 
+                  "ignore part of list, because it is too long." if len(self.img_fp_all)>100 else "")
+            print("image num ", len(self.img_fp_all))
+
         if cfg.DEBUG.DEBUG:
             print(self.cam_idxs)
             print(self.img_fp_all)
             print(self.frame_idxs)        
     
-
     def buffer_all(self):
         # if preset_uv_path:
         #    self.v_attr, self.f_attr = nr.load_obj(cur_obj_fp, normalization = False)
@@ -204,7 +215,7 @@ class DomeViewDataset():
             # img_gt = img_gt.transpose(2,0,1)
             # img_gt = img_gt ** self.img_gamma
             img_gt = Image.open(img_fp)
-            img_gt, proj, pose, mask, ROI = self.transform(img_gt, proj, pose)
+            img_gt, mask, _, ROI, proj, pose  = self.transform(img_gt, K=proj, Tc=pose)
 
             # load mask
             # if self.cfg.DEBUG.DEBUG:
@@ -311,20 +322,90 @@ class DomeViewDataset():
             # save_dir_img_gt = './Debug/resol_512/cut_image/'
             # cv2.imwrite(os.path.join(save_dir_img_gt, '%03d_'%frame_idx + img_fn), cv2.cvtColor(img_gt.transpose(1,2,0)*255.0 * mask_orig, cv2.COLOR_BGR2RGB))
         return view
+    
+    def init_rasterizer(self, obj_path, global_RT):
+        self.cur_obj_path = obj_path
+        obj_data = {}
+        obj_data['v_attr'] , obj_data['f_attr'] = nr.load_obj(obj_path, normalization = False, use_cuda = False)        
+        self.rasterizer = network.Rasterizer(self.cfg,
+                            obj_data = obj_data,
+                            # preset_uv_path = cfg.DATASET.UV_PATH,
+                            global_RT = global_RT)
+        self.rasterizer.cuda()
+
+    def project_with_rasterizer(self, view_trgt, isBatch=False):
+        # get uvmap alpha
+        # raster module
+        frame_idx = view_trgt['f_idx']
+        obj_path = view_trgt['obj_path']
+        
+        # batch to singe data
+        frame_idx = frame_idx[0] if isBatch else frame_idx
+        obj_path = obj_path[0] if isBatch else obj_path
+
+        if self.cur_obj_path != obj_path:
+            self.cur_obj_path = obj_path
+            obj_data = self.objs[frame_idx]
+            self.rasterizer.update_vs(obj_data['v_attr'])
+
+        proj = view_trgt['proj'].cuda()
+        pose = view_trgt['pose'].cuda()
+        dist_coeffs = view_trgt['dist_coeffs'].cuda()
+
+        # singe data to batch for network module
+        if not isBatch:
+            pose = pose[None, ...]
+            proj = proj[None, ...]
+            dist_coeffs = dist_coeffs[None, ...]
+
+        uv_map_single, alpha_map_single, _, _, _, _, _, _, _, _, _, _, _, _ = \
+            self.rasterizer(proj = proj, 
+                        pose = pose, 
+                        dist_coeffs = dist_coeffs, 
+                        offset = None,
+                        scale = None)                
+        uv_map_single = uv_map_single[0, ...]
+        alpha_map_single = alpha_map_single[0, ...]
+        return uv_map_single, alpha_map_single
+
+    def read_view_from_cam(self, view_trgt, pose):
+        isBatch = True
+        view_trgt['pose'] = pose[None, ...]
+        uv_map, alpha_map = self.project_with_rasterizer(view_trgt, isBatch)
+        view_trgt['uv_map'] = uv_map[None,...]
+        view_trgt['alpha_map'] = alpha_map[None,...]
+        return view_trgt
 
     def __len__(self):
         return len(self.img_fp_all)
 
     def __getitem__(self, idx):
-        # view_trgt = []
-
         # to-do fix first frame error
         if len(self.views_all) > idx:
             view_trgt = self.views_all[idx]
-            # view_trgt.append(self.views_all[idx])
         else:
             view_trgt = self.read_view(idx)
-            # view_trgt.append(self.read_view(idx))
-            
-        return view_trgt
-        
+
+        # generate project uv
+        uv_map, alpha_map = self.project_with_rasterizer(view_trgt)
+        view_trgt['uv_map'] = uv_map
+        view_trgt['mask'] = alpha_map
+
+        # generate refered tex
+        # img_dir='./data/densepose_cx/img'
+        # uvmap_dir='./data/densepose_cx/uv'
+        # mask_dir='./data/densepose_cx/mask'
+        # img_name_ref = '020_017.png'
+
+        img_dir='./data/200830_hnrd_SDAP_30714418105/img'
+        uvmap_dir='./data/200830_hnrd_SDAP_30714418105/uv'
+        mask_dir='./data/200830_hnrd_SDAP_30714418105/mask'
+        img_name_ref = 'SDAP_30714418105_38_00000.jpg'
+
+        view_ref_data = self.load_view(img_name_ref, img_dir, uvmap_dir, mask_dir)
+        tex_ref = self.load_tex(img_name_ref, view_ref_data['img'], view_ref_data['uv_map'], save_cal=True)
+        view_trgt['img_ref'] = view_ref_data['img']
+        view_trgt['uv_map_ref'] = view_ref_data['uv_map']
+        view_trgt['tex_ref'] = tex_ref
+        return view_trgt    
+    

@@ -36,13 +36,14 @@ def writer_add_scalar_gan(writer, num_iter, epoch, metrics, loss=None, log_time=
 
     it_v = iter(loss.values())  
     it_k = iter(loss.keys())  
-    print("%s %s Iter-%07d Epoch-%03d \n%8s/%8s/%8s/%8s/%8s/%8s/%8s \n%0.6f/%0.6f/%0.6f/%0.6f/%0.6f/%0.6f/%0.6f mae_valid %0.4f psnr_valid %0.4f t %0.2fs" 
+    print("%s %s Iter-%07d Epoch-%03d %8s:%0.6f %8s:%0.6f %8s:%0.6f %8s:%0.6f %8s:%0.6f %8s:%0.6f %8s:%0.6f mae_valid %0.4f psnr_valid %0.4f t %0.2fs" 
             % (log_time,
                 ex_name,
                 num_iter,
                 epoch,
-                next(it_k), next(it_k), next(it_k), next(it_k), next(it_k), next(it_k), next(it_k), 
-                next(it_v), next(it_v), next(it_v), next(it_v), next(it_v), next(it_v), next(it_v), 
+                next(it_k), next(it_v), next(it_k), next(it_v), next(it_k), next(it_v), 
+                next(it_k), next(it_v), next(it_k), next(it_v), next(it_k), next(it_v),
+                next(it_k), next(it_v), 
                 metrics['mae_valid_mean'], 
                 metrics['psnr_valid_mean'], 
                 iter_time))
@@ -107,7 +108,7 @@ def writer_add_image_gan(writer, iter, epoch, inputs, results, ex_name=None):
     # different
     vis_set_diff = ['img_rs','nimg_rs']
     for vis_key in vis_set_diff:
-        if vis_key in inputs:
+        if vis_key in results:
             img_vis.append((results[vis_key] - inputs['img']).abs().clamp(min = 0., max = 1.))
     img_vis = torch.cat(img_vis, dim = 0)
 
@@ -163,9 +164,8 @@ def writer_add_image_gan(writer, iter, epoch, inputs, results, ex_name=None):
             uv_map = results[vis_key]
 
             uv_map = uv_map.permute(0,3,1,2)
-            N, C, H, W = uv_map.shape
-            uv_map_rs3 = torch.cat((uv_map, torch.zeros(N, 1, H, W, dtype=uv_map.dtype, device=uv_map.device)), dim = 1)
-            uv_map_gt3 = torch.cat((inputs['uv_map'].permute(0,3,1,2), torch.zeros(N, 1, H, W, dtype=uv_map.dtype, device=uv_map.device)), dim = 1)           
+            uv_map_rs3 = tensor_2ch_to_3ch_batch(uv_map)
+            uv_map_gt3 = tensor_2ch_to_3ch_batch(inputs['uv_map'].permute(0,3,1,2))
             uv_maps.append((uv_map_rs3 - uv_map_gt3).abs().clamp(min = 0., max = 1.))
 
     uv_maps = torch.cat(uv_maps, dim = 0)
@@ -176,3 +176,13 @@ def writer_add_image_gan(writer, iter, epoch, inputs, results, ex_name=None):
                                             scale_each = False,
                                             normalize = False).cpu().detach().numpy()[::-1, :, :], # uv0 -> 0vu (rgb)
                                             iter)
+
+def tensor_2ch_to_3ch_batch(uv):
+    N, C, H, W = uv.shape
+    uv3 = torch.cat((uv, torch.zeros(N, 1, H, W, dtype=uv.dtype, device=uv.device)), dim = 1)
+    return uv3
+
+def tensor_2ch_to_3ch(uv):
+    H, W, C = uv.shape
+    uv3 = torch.cat((uv, torch.zeros(H, W, 1, dtype=uv.dtype, device=uv.device)), dim = 2)
+    return uv3    

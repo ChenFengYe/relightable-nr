@@ -219,7 +219,7 @@ class DPViewDataset():
         # mask_transform = get_transform(self.cfg, params, normalize=False, toTensor=False, isTrain=self.isTrain)
         # mask = mask_transform(mask)
 
-        img, mask, uvmap, _, _ = self.transform(img, mask=mask, uvmap=uvmap)
+        img, mask, uvmap, _, _, _ = self.transform(img, mask=mask, uvmap=uvmap)
 
         uvmap = uvmap[:2, ...]
         uvmap[uvmap >= 1] = 0
@@ -240,6 +240,9 @@ class DPViewDataset():
             tex = self.generate_tex(img, uv_map)
             if save_cal:
                 cv2.imwrite(tex_path, tex.numpy()[...,::-1]*255)
+
+            # H W C to C H W
+            tex = tex.permute(2,0,1)
         else:
             tex = Image.open(tex_path)
             tex = T.functional.to_tensor(tex)

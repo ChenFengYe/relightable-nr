@@ -3,9 +3,9 @@ import torch
 from lib.models import network
 from lib.utils import util
 
-class FeaturePairNet(torch.nn.Module):
+class AttFeaturePairNet(torch.nn.Module):
     def __init__(self, cfg):
-        super(FeaturePairNet, self).__init__()
+        super(AttFeaturePairNet, self).__init__()
 
         self.cfg = cfg
         # texture creater
@@ -41,7 +41,7 @@ class FeaturePairNet(torch.nn.Module):
     #     return atalas.clone().detach().cpu()
 
     def get_atalas(self, ref_tex, neural_tex, att_neural_tex, attention_map):
-        atalas = torch.cat((ref_tex.permute(0,3,1,2)[:, 0:3, :, :], 
+        atalas = torch.cat((ref_tex[:, 0:3, :, :], 
                             neural_tex[:, 0:3, :, :],
                             att_neural_tex[:, 0:3, :, :],
                             attention_map), dim=1)
@@ -67,10 +67,8 @@ class FeaturePairNet(torch.nn.Module):
             pass
 
         atlas = self.get_atalas(ref_tex, neural_tex, att_neural_tex, attention_map)
-        # outputs = torch.cat((outputs_img, neural_img[:,0:3,:,:], atlas), dim = 1)
-        outputs = torch.cat((outputs_img, att_neural_tex[:,0:3,:,:], atlas), dim = 1)
-        
-        # to-do change to dict
+        outputs = {'img_rs':outputs_img, 'tex_rs':neural_tex[:,0:3,:,:], 'nimg_rs':neural_img[:,0:3,:,:],
+                   'atlas':atlas, 'ref_tex':ref_tex}
         return outputs
 
     def parameters(self):

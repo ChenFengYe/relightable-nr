@@ -5,6 +5,7 @@ from lib.engine import loss
 from lib.utils import util
 
 from lib.models.feature_pair_net import FeaturePairNet
+from lib.models.att_feature_pair_net import AttFeaturePairNet
 from lib.engine.loss import MultiLoss
 
 from collections import OrderedDict
@@ -29,6 +30,7 @@ class Pix2PixModel(torch.nn.Module):
 
         # Generator
         self.netG = FeaturePairNet(cfg=cfg)
+        # self.netG = AttFeaturePairNet(cfg=cfg)
         
         self.netG = network.init_net(net = self.netG,
                          init_type = cfg.MODEL.NET_D.INIT_TYPE,
@@ -160,7 +162,8 @@ class Pix2PixModel(torch.nn.Module):
         # if not self.isTrain or cfg.continue_train:
         #     load_suffix = 'iter_%d' % opt.load_iter if opt.load_iter > 0 else opt.epoch
         #     self.load_networks(load_suffix)
-        self.print_networks(cfg.VERBOSE)
+        if self.isTrain:
+            self.print_networks(cfg.VERBOSE)
 
     def test(self, input):
         """Forward function used in test time.
@@ -188,11 +191,24 @@ class Pix2PixModel(torch.nn.Module):
                 print('[Network %s] Total number of parameters : %.3f M' % (name, num_params / 1e6))
         print('-----------------------------------------------')
         
-    def load_networks(self, epoch):
-        """Load all the networks from the disk.
-        Parameters:
-            epoch (int) -- current epoch; used in the file name '%s_net_%s.pth' % (epoch, name)
-        """
+    def state_dict(self):
+        whole_dict = {}
+        for name in self.model_names:
+            name = 'net' + name
+            net = getattr(self, name)
+            if isinstance(net, torch.nn.DataParallel):
+                net = net.module
+            whole_dict.update({name: net.state_dict()})
+
+    def load_state_dict(self, whole_dict):
+        for name in self.model_names:
+            name = 'net' + name
+            net = getattr(self, name)
+            if isinstance(net, torch.nn.DataParallel):
+                net = net.module
+            net.load_state_dict(whole_dict[name], strict = True)
+
+    def load_networks(self, state_dict):
         for name in self.model_names:
             if isinstance(name, str):
                 load_filename = '%s_net_%s.pth' % (epoch, name)

@@ -17,7 +17,7 @@ DATASET:
   OUTPUT_SIZE: [512, 512]
 
   GEN_TEX: True
-  TEX_INTERPOLATER: 'linear'
+  TEX_INTERPOLATER: 'nearest'
 
   # 3D data
   CAM_RANGE: [-1]
@@ -65,8 +65,8 @@ LOSS:
     WEIGHT_HSV: 0.0
     WEIGHT_ATLAS: 1.0
 TRAIN:
-  EXP_NAME: 'NoAtt'
-  BATCH_SIZE: 4
+  EXP_NAME: 'NoAtt_nearest'
+  BATCH_SIZE: 2
   BEGIN_EPOCH: 0
   RESUME: False
   CHECKPOINT: ''
@@ -82,8 +82,24 @@ TRAIN:
   OPTIMIZER: adam
   
 TEST:
-  DATASET: DomeViewDataset
-  ROOT: 'data/white_walkshow'
+  # DATASET: DomeViewDataset
+  # ROOT: 'data/white_walkshow'
+  # FRAME_RANGE: [1,100]
+  # CAM_RANGE: [0]  # [id] for single cam_id
+  # IMG_DIR: '_/rgb0_rect/%03d.png'
+  # GAMMA: 1.0
+  # OUTPUT_SIZE: [512, 512]
+
+  # CALIB_PATH: '_/calib20200715_pifu.mat'
+  # CALIB_FORMAT: 'convert'
+  # CAM_MODE: 'orthogonal'
+
+  # # 3D data
+  # TEX_PATH: ''
+  # UV_PATH: ''
+  # MESH_DIR: '_/mesh_smplx2pifu_uv/aligned_%03d_512.obj'
+  # PRELOAD_MESHS: True
+
   BATCH_SIZE: 10
   FRAME_RANGE: [-1,-1]
   MODEL_PATH: './log/08-02_17-27-44_skipinv_10_chenxin_zhen_try_new/model_epoch_11999_iter_60000_.pth'

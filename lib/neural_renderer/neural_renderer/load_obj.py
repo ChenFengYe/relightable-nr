@@ -174,8 +174,10 @@ def load_obj(filename_obj, normalization=True, texture_size=4, load_texture=Fals
                 face_vn_idx = [int(vs[i].split('/')[-1]) for i in range(nv)]
                 faces_vn_idx.append(face_vn_idx)
     faces = torch.from_numpy(np.vstack(faces).astype(np.int32)) - 1
-    faces_vn_idx = torch.from_numpy(np.vstack(faces_vn_idx).astype(np.int32)) - 1
-    faces_vt_idx = torch.from_numpy(np.vstack(faces_vt_idx).astype(np.int32)) - 1
+    if len(faces_vn_idx)>0:
+        faces_vn_idx = torch.from_numpy(np.vstack(faces_vn_idx).astype(np.int32)) - 1
+    if len(faces_vt_idx)>0:        
+        faces_vt_idx = torch.from_numpy(np.vstack(faces_vt_idx).astype(np.int32)) - 1
     if use_cuda:
         faces = faces.cuda()
         faces_vn_idx = faces_vn_idx.cuda()
