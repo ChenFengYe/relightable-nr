@@ -21,7 +21,8 @@ class Pix2PixModel(torch.nn.Module):
         self.visual_names = []
         self.optimizers = []
 
-        self.loss_names = ['D_real', 'D_fake', 'G_GAN', 'G_Multi', 'G_per', 'G_atlas_ref', 'G_atlas_tar']
+        self.lambda_L1 = cfg.MODEL.GAN.LAMBDA_L1
+        self.loss_names = ['D_real', 'D_fake', 'G_GAN', 'G_Multi', 'G_per', 'G_atlas_ref', 'G_atlas_tar', 'G_atlas_unify']
         self.visual_names = ['real_A', 'fake_B', 'real_B']        
         if self.isTrain:
             self.model_names = ['G', 'D']
@@ -74,6 +75,8 @@ class Pix2PixModel(torch.nn.Module):
         if self.isTrain:
             self.real_B = input['img'].to(self.device)
             self.real_BTex = input['tex_tar'].to(self.device)
+            self.real_A_UV = input['uv_map_ref'].to(self.device).permute(0,3,1,2)
+            self.real_B_UV = input['uv_map'].to(self.device).permute(0,3,1,2)
         
     def devices(self):
         devices = ({param.device for param in self.parameters()} |
@@ -110,11 +113,11 @@ class Pix2PixModel(torch.nn.Module):
     def backward_D(self):
         """Calculate GAN loss for the discriminator"""
         # Fake; stop backprop to the generator by detaching fake_B
-        fake_AB = torch.cat((self.real_A, self.fake_B), 1)  # we use conditional GANs; we need to feed both input and output to the discriminator
+        fake_AB = torch.cat((self.real_A_UV, self.real_A, self.real_B_UV, self.fake_B), 1)  # we use conditional GANs; we need to feed both input and output to the discriminator
         pred_fake = self.netD(fake_AB.detach())
         self.loss_D_fake = self.criterionGAN(pred_fake, False)
         # Real
-        real_AB = torch.cat((self.real_A, self.real_B), 1)
+        real_AB = torch.cat((self.real_A_UV, self.real_A, self.real_B_UV, self.real_B), 1)
         pred_real = self.netD(real_AB)
         self.loss_D_real = self.criterionGAN(pred_real, True)
         # combine loss and calculate gradients
@@ -124,7 +127,7 @@ class Pix2PixModel(torch.nn.Module):
     def backward_G(self):
         """Calculate GAN and L1 loss for the generator"""
         # First, G(A) should fake the discriminator
-        fake_AB = torch.cat((self.real_A, self.fake_B), 1)
+        fake_AB = torch.cat((self.real_A_UV, self.real_A, self.real_B_UV, self.fake_B), 1)
         pred_fake = self.netD(fake_AB)
         self.loss_G_GAN = self.criterionGAN(pred_fake, True)
         # Second, G(A) = B
@@ -135,9 +138,10 @@ class Pix2PixModel(torch.nn.Module):
         self.loss_G_per = self.criterionMulti.loss_rgb
         self.loss_G_atlas_ref = self.criterionMulti.loss_atlas_ref
         self.loss_G_atlas_tar = self.criterionMulti.loss_atlas_tar
+        self.loss_G_atlas_unify = self.criterionMulti.loss_atlas_unify
         ##################################################################
         # combine loss and calculate gradients
-        self.loss_G = self.loss_G_GAN + self.loss_G_Multi
+        self.loss_G = self.loss_G_GAN + self.loss_G_Multi * self.lambda_L1
         self.loss_G.backward()
 
     def optimize_parameters(self, view_data):
@@ -199,6 +203,7 @@ class Pix2PixModel(torch.nn.Module):
             if isinstance(net, torch.nn.DataParallel):
                 net = net.module
             whole_dict.update({name: net.state_dict()})
+        return whole_dict
 
     def load_state_dict(self, whole_dict):
         for name in self.model_names:

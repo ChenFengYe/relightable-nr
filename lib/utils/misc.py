@@ -61,6 +61,7 @@ def interpolate_scipy(img, window_size = 10, interpolator = scipy.interpolate.Ne
     img_mask = target_for_interp!=0
     kernel_tar = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (window_size, window_size))
     mask_tar = cv2.dilate(img_mask.astype('uint8'), kernel_tar, borderType=cv2.BORDER_CONSTANT, borderValue=int(0))
+    mask_tar = cv2.erode(mask_tar.astype('uint8'), kernel_tar, borderType=cv2.BORDER_CONSTANT, borderValue=int(0))
     mask_tar = (mask_tar!=0) * (~img_mask)
 
     # dilate to mask borders around target regions (valid regions only)

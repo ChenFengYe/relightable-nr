@@ -169,7 +169,7 @@ class RandomTransform(object):
 
         if uvmap is not None:
             transform = {'t':translation,'r':rotation,'s':ration,'K':K}
-            window_rate = 0.05
+            window_rate = 0.03
             window_size = 1.0*window_rate
             uvmap = uv_interpolation(uvmap, window_size, self.size, transform)
 

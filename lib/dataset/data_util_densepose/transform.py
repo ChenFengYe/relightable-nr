@@ -191,7 +191,7 @@ class RandomTransform(object):
                 mask = T.functional.resize(mask, self.size, self.interpolation)
                 mask = T.functional.to_tensor(mask)
 
-            window_rate = 0.05
+            window_rate = 0.03
             window_size = 1.0*window_rate
             uvmap = uv_interpolation(uvmap, window_size, self.size)
 

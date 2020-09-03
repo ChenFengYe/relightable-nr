@@ -86,19 +86,20 @@ def build_model(args):
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
         # model_net.load_optimizer_state_dict(checkpoint['optimizer'])
 
-        def fix_module_state_dict(state_dict):
-            from collections import OrderedDict
-            new_state_dict = OrderedDict()
-            netG_state_dict = OrderedDict()
-            for k, v in state_dict.items():
-                if k[:len('netG.module')] == 'netG.module':
-                    name = k.replace("netG.module.", "")
-                    netG_state_dict[name] = v
-            new_state_dict['netG'] = netG_state_dict
-            return new_state_dict
+        # def fix_module_state_dict(state_dict):
+        #     from collections import OrderedDict
+        #     new_state_dict = OrderedDict()
+        #     netG_state_dict = OrderedDict()
+        #     for k, v in state_dict.items():
+        #         if k[:len('netG.module')] == 'netG.module':
+        #             name = k.replace("netG.module.", "")
+        #             netG_state_dict[name] = v
+        #     new_state_dict['netG'] = netG_state_dict
+        #     return new_state_dict
         
-        state_dict = fix_module_state_dict(checkpoint['state_dict'])
-        model_net.load_state_dict(state_dict)
+        # state_dict = fix_module_state_dict(checkpoint['state_dict'])
+        # model_net.load_state_dict(state_dict)
+        model_net.load_state_dict(checkpoint['state_dict'])
 
         # model_net.load_state_dict(checkpoint['state_dict'])
         print(' Load checkpoint path from %s'%(checkpoint_path))

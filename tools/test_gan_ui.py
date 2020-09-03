@@ -12,15 +12,18 @@ import json
 import torch
 import cv2
 import math
+import time
 
 class Args():
     def __init__(self, cfg, opts):
         self.cfg = cfg
         self.opts = opts
 
-args = Args('/new_disk/chenxin/relightable-nr/data/200830_hnrd_SDAP_30714418105/logs/08-31_07-21-59_NoAtt_linear/200830_GAN_APose.yaml',
+args = Args('/new_disk/chenxin/relightable-nr/data/200830_hnrd_SDAP_14442478293/logs/09-02_16-34-18_cam_9views/200830_GAN_APose.yaml',
             ['WORKERS','0', 'TEST.BATCH_SIZE','1'])
 
+# args = Args('/new_disk/chenxin/relightable-nr/data/200830_hnrd_SDAP_30714418105/logs/08-31_07-21-59_NoAtt_linear/200830_GAN_APose.yaml',
+#             ['WORKERS','0', 'TEST.BATCH_SIZE','1'])
 
 app = Flask(__name__)
 
@@ -52,7 +55,8 @@ def prepare_camera_transform(obj, Ts):
 
     center = torch.mean(in_points,dim=0).cpu()
     # up = -torch.mean(Ts[:,0:3,0],dim =0)
-    up = -torch.tensor([0.,0.,1.])
+    # up = -torch.tensor([0.,0.,1.])
+    up = torch.tensor([0.,1.,0.]) # dome camera
     # up = -Ts[0:3,0]
     up = up / torch.norm(up)
         
@@ -149,38 +153,63 @@ def calculate_cam_pose(data, cam_data):
     T = torch.Tensor(T).cuda()
     return T
 
+def calculate_frame(data, frame_id, frame_range):
+    frame_id = frame_id.item()
+    op=data['op']
+    frame_len = len(frame_range)
+    idx = frame_range.index(frame_id)
+    if op[0]==7:
+        idx = (idx-1)%frame_len
+        print('previous frame')
+    elif op[0]==8:
+        idx = (idx+1)%frame_len
+        print('previous frame')
+    cur_frame_id = frame_range[idx]
+    return torch.tensor([cur_frame_id])
+
 # load model
 model, view_dataloader, view_dataset, save_dict = build_model(args)
 
 # prepare cam
-obj = view_dataset.objs[0]
+global global_view_data
+global_view_data = next(iter(view_dataloader))    
+obj = view_dataset.objs[global_view_data['f_idx'].item()]
 Ts = view_dataset.poses_all[0]
 Ts = np.dot(Ts, view_dataset.global_RT_inv)
 cam_data = prepare_camera_transform(obj, Ts)
-global view_data
-view_data = next(iter(view_dataloader))    
 
 @app.route('/', methods = ["GET","POST"])
 def hello_world():
+    t_start_all = time.time()
+    t_start = time.time()
+
     # recevice data
     data = request.get_data()
     data = json.loads(data)
 
     # generate view
     # view_data = view_dataset.__getitem__(0)
-    T = calculate_cam_pose(data, cam_data)
-    global view_data
     # T = view_data['pose'][0,...]
-    view_data = view_dataset.read_view_from_cam(view_data, T)
+    T = calculate_cam_pose(data, cam_data)
+    global global_view_data
+    global_view_data['f_idx'] = calculate_frame(data, global_view_data['f_idx'], view_dataset.frame_range)    
+    global_view_data = view_dataset.read_view_from_cam(global_view_data, T)
 
     # inference
-    model.set_input(view_data)
-    model.test(view_data)
+    model.set_input(global_view_data)
+
+    print('load data'+ str(time.time()-t_start) + '  s')
+    t_start = time.time()
+
+    model.test(global_view_data)
+    print('test data'+ str(time.time()-t_start) + '  s')
+    t_start = time.time()
+
     outputs = model.get_current_results()
 
     outputs_img = outputs['img_rs']
     neural_img = outputs['nimg_rs']
-    # uv_map = view_data['uv_map']
+    # uv_map = global_view_data['uv_map']
 
     outputs_img = outputs_img.detach().cpu()[0]
     outputs_img = cv2.cvtColor(outputs_img.permute(1,2,0).numpy()*255.0, cv2.COLOR_BGR2RGB)
@@ -202,7 +231,11 @@ def hello_world():
 
     Im_res = np.hstack((outputs_img, neural_img))
     Im = Image.fromarray(Im_res.astype('uint8')).convert('RGB')
-    return serve_pil_image(Im)
+    im_data = serve_pil_image(Im)
+
+    print('outp data'+ str(time.time()-t_start) + '  s')
+    print('all  time'+ str(time.time()-t_start_all) + '  s')
+    return im_data
 
 if __name__ == '__main__':
-    app.run(debug=False, threaded=True, host='0.0.0.0',port=800)
+    app.run(debug=False, threaded=True, host='0.0.0.0',port=900)

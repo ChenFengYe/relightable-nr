@@ -25,7 +25,7 @@ class DomeViewDataset(DPViewDataset):
         root_dir = cfg.DATASET.ROOT
         calib_path = cfg.DATASET.CALIB_PATH
         calib_format = cfg.DATASET.CALIB_FORMAT
-        sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN
+        sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN if isTrain else cfg.TEST.SAMPLING_PATTERN
         precomp_high_dir = cfg.DATASET.PRECOMP_DIR
         precomp_low_dir = cfg.DATASET.PRECOMP_DIR
         preset_uv_path = cfg.DATASET.UV_PATH
@@ -44,7 +44,7 @@ class DomeViewDataset(DPViewDataset):
         self.precomp_low_dir = precomp_low_dir
 
         self.img_gamma = cfg.DATASET.GAMMA        
-        self.frame_range = cfg.DATASET.FRAME_RANGE
+        self.frame_range = cfg.DATASET.FRAME_RANGE if isTrain else cfg.TEST.FRAME_RANGE
         self.cam_range = cfg.DATASET.CAM_RANGE
         self.cam_idxs = []
         self.frame_idxs = []
@@ -176,7 +176,7 @@ class DomeViewDataset(DPViewDataset):
                 obj_data['v_attr'] , obj_data['f_attr'] = nr.load_obj(cur_obj_fp, normalization = False, use_cuda = False)
                 self.objs[frame_idx] = obj_data
                 if self.cfg.VERBOSE:
-                    print(' Loading mesh: ' + str(frame_idx) + ' ' + cur_obj_fp)
+                    print(' Loading mesh: ' + str(int(frame_idx)) + ' ' + cur_obj_fp)
 
         if self.cfg.DATASET.PRELOAD_VIEWS:
             # Buffer files
@@ -341,6 +341,7 @@ class DomeViewDataset(DPViewDataset):
         
         # batch to singe data
         frame_idx = frame_idx[0] if isBatch else frame_idx
+        frame_idx = frame_idx.item() if type(frame_idx) == torch.Tensor else frame_idx
         obj_path = obj_path[0] if isBatch else obj_path
 
         if self.cur_obj_path != obj_path:
@@ -371,6 +372,7 @@ class DomeViewDataset(DPViewDataset):
     def read_view_from_cam(self, view_trgt, pose):
         isBatch = True
         view_trgt['pose'] = pose[None, ...]
+        view_trgt['obj_path'] = [self.cfg.DATASET.MESH_DIR %(view_trgt['f_idx'].item())]
         uv_map, alpha_map = self.project_with_rasterizer(view_trgt, isBatch)
         view_trgt['uv_map'] = uv_map[None,...]
         view_trgt['alpha_map'] = alpha_map[None,...]
@@ -397,10 +399,15 @@ class DomeViewDataset(DPViewDataset):
         # mask_dir='./data/densepose_cx/mask'
         # img_name_ref = '020_017.png'
 
-        img_dir='./data/200830_hnrd_SDAP_30714418105/img'
-        uvmap_dir='./data/200830_hnrd_SDAP_30714418105/uv'
-        mask_dir='./data/200830_hnrd_SDAP_30714418105/mask'
-        img_name_ref = 'SDAP_30714418105_38_00000.jpg'
+        # img_dir='./data/200830_hnrd_SDAP_30714418105/img'
+        # uvmap_dir='./data/200830_hnrd_SDAP_30714418105/uv'
+        # mask_dir='./data/200830_hnrd_SDAP_30714418105/mask'
+        # img_name_ref = 'SDAP_30714418105_38_00000.jpg'
+
+        img_dir='./data/200830_hnrd_SDAP_14442478293/img'
+        uvmap_dir='./data/200830_hnrd_SDAP_14442478293/uv'
+        mask_dir='./data/200830_hnrd_SDAP_14442478293/mask'
+        img_name_ref = 'SDAP_14442478293_35_00000.jpg'
 
         view_ref_data = self.load_view(img_name_ref, img_dir, uvmap_dir, mask_dir)
         tex_ref = self.load_tex(img_name_ref, view_ref_data['img'], view_ref_data['uv_map'], save_cal=True)

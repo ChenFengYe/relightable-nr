@@ -27,10 +27,10 @@ class LossNetwork(torch.nn.Module):
         https://discuss.pytorch.org/t/how-to-extract-features-of-an-image-from-a-trained-model/119/3
     """
 
-    def __init__(self):
+    def __init__(self, vgg_model):
         super(LossNetwork, self).__init__()
-        self.vgg_layers = vgg.vgg19(pretrained=True).features
-
+        # self.vgg_layers = vgg.vgg19(pretrained=True).features
+        self.vgg_layers = vgg_model
         '''
         self.layer_name_mapping = {
             '3': "relu1",
@@ -56,12 +56,12 @@ class LossNetwork(torch.nn.Module):
         return LossOutput(**output)
 
 class PerceptualLoss(torch.nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg, vgg_model):
         super(PerceptualLoss, self).__init__()
 
         #self.model = models_lpf.resnet50(filter_size = 5)
         #self.model.load_state_dict(torch.load('/data/wmy/NR/models/resnet50_lpf5.pth.tar')['state_dict'])
-        self.model = LossNetwork()
+        self.model = LossNetwork(vgg_model)
         self.model.cuda()
         # self.model.to(cfg.GPUS[0])
         self.model.eval()

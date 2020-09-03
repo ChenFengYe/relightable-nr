@@ -310,11 +310,11 @@ class Rasterizer(nn.Module):
 
     def update_vs(self, v_attr):
         vertices = v_attr['v'].cuda()
-        vertices_normals = v_attr['vn'].cuda()
+        # vertices_normals = v_attr['vn'].cuda()
         # apply global_RT
         if self.global_RT is not None:
             vertices = torch.matmul(self.global_RT.to(vertices.device), torch.cat((vertices, torch.ones(self.num_vertex, 1).to(vertices.device)), dim = 1).transpose(1, 0)).transpose(1, 0)[:, :3]
-            vertices_normals = torch.nn.functional.normalize(torch.matmul(self.global_RT[:3, :3].to(vertices.device), vertices_normals.transpose(1, 0)).transpose(1, 0), dim = 1)
+            # vertices_normals = torch.nn.functional.normalize(torch.matmul(self.global_RT[:3, :3].to(vertices.device), vertices_normals.transpose(1, 0)).transpose(1, 0), dim = 1)
         self.register_buffer('vertices', vertices[None, :, :]) # [1, num_vertex, 3]
         self.mesh_span = (self.vertices[0, :].max(dim = 0)[0] - self.vertices[0, :].min(dim = 0)[0]).max()
 

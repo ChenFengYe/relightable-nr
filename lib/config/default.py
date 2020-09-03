@@ -109,7 +109,7 @@ _C.MODEL.GAN.LAMBDA_L1 = 100.0              # weight for L1 loss, the training o
 _C.MODEL.NET_D = CN()
 _C.MODEL.NET_D.ARCH = 'basic'               # Specify discriminator architecture [basic | n_layers | pixel]. The basic model is a 70x70 PatchGAN. n_layers allows you to specify the layers in the discriminator
 _C.MODEL.NET_D.INPUT_CHANNELS = 6           # 6 = 3 + 3 (fake img + real img)
-_C.MODEL.NET_D.OUTPUT_CHANNELS = 3
+# _C.MODEL.NET_D.OUTPUT_CHANNELS = 3
 _C.MODEL.NET_D.N_LAYERS_D = 3               # Only used if netD==n_layers
 _C.MODEL.NET_D.NDF = 64                     # Number of discrim filters in the first conv layer
 _C.MODEL.NET_D.NORM = 'batch'               # Instance normalization or batch normalization [instance | batch | none]
@@ -143,9 +143,12 @@ _C.TRAIN.OPTIMIZER = 'adam'
 
 _C.LOSS = CN()
 _C.LOSS.PERCEPTUALLOSS = "L1"
+_C.LOSS.WEIGHT_GAN_G = 1.0
 _C.LOSS.WEIGHT_PERCEPTUAL = 1.0
 _C.LOSS.WEIGHT_HSV = 1.0
 _C.LOSS.WEIGHT_ATLAS = 1.0
+_C.LOSS.WEIGHT_ATLAS_REF = 0.1
+_C.LOSS.WEIGHT_ATLAS_UNIFY = 0.01
 
 _C.TEST = CN()
 _C.TEST.BATCH_SIZE = 3

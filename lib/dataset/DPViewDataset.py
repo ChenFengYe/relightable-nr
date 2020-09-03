@@ -59,6 +59,8 @@ class DPViewDataset():
                 mask_path = os.path.join(self.mask_dir, img_key + '.png')
 
                 if os.path.exists(image_path) and os.path.exists(mask_path) and os.path.exists(uvmap_path):
+                    # cam_9views_set = [4,10,23,29,35,45,51,54,70]
+                    # if int(img_name[-12:-10]) in cam_9views_set:
                     self.img_names.append(img_name)
 
             self.img_names = sorted(self.img_names)
@@ -233,18 +235,21 @@ class DPViewDataset():
 
     def load_tex(self, img_name, img, uv_map, save_cal=True):
         img_key = os.path.splitext(img_name)[0]
-        tex_dir = os.path.join(self.root_dir, 'tex')
-        tex_path = os.path.join(tex_dir, img_key+".png")
+        tex_path = os.path.join(self.root_dir, 'tex', img_key+".png")
+        tex_nearest_path = os.path.join(self.root_dir, 'tex_nearest', img_key+".png")
 
-        if not os.path.exists(tex_path):
+        if not os.path.exists(tex_path) and not os.path.exists(tex_nearest_path):
             tex = self.generate_tex(img, uv_map)
             if save_cal:
                 cv2.imwrite(tex_path, tex.numpy()[...,::-1]*255)
 
             # H W C to C H W
             tex = tex.permute(2,0,1)
-        else:
+        elif os.path.exists(tex_path):
             tex = Image.open(tex_path)
+            tex = T.functional.to_tensor(tex)
+        elif os.path.exists(tex_nearest_path):
+            tex = Image.open(tex_nearest_path)
             tex = T.functional.to_tensor(tex)
         return tex
 

@@ -6,8 +6,8 @@ VERBOSE: True
 LOG:
   CFG_NAME: 200828_GAN_APose.yaml
   LOG_DIR: log
-  PRINT_FREQ: 1000
-  CHECKPOINT_FREQ: 3000
+  PRINT_FREQ: 500
+  CHECKPOINT_FREQ: 2000
 DATASET:
   DATASET: DPViewDataset # DomeViewDataset DPiewDataset
   ROOT: 'data/200827_hnrd'
@@ -17,7 +17,7 @@ DATASET:
   OUTPUT_SIZE: [512, 512]
 
   GEN_TEX: True
-  TEX_INTERPOLATER: 'nearest'
+  TEX_INTERPOLATER: 'linear'
 
   # 3D data
   CAM_RANGE: [-1]
@@ -60,13 +60,20 @@ MODEL:
     NUM_PARAMS: -1
   ALIGN_MODULE:
     MID_CHANNELS: 32
+  GAN:
+    MODE: 'vanilla'
+    LAMBDA_L1: 100.0
+  NET_D:
+    ARCH: 'basic'
+    INPUT_CHANNELS: 10           # 6 = 2 + 3 + 2 + 3 (A_uv, A_img, B_uv, B_img)
+
 LOSS:
-    WEIGHT_PERCEPTUAL: 10.0
+    WEIGHT_PERCEPTUAL: 5.0
     WEIGHT_HSV: 0.0
     WEIGHT_ATLAS: 1.0
 TRAIN:
-  EXP_NAME: 'NoAtt_nearest'
-  BATCH_SIZE: 2
+  EXP_NAME: 'fix_gan_error'
+  BATCH_SIZE: 4
   BEGIN_EPOCH: 0
   RESUME: False
   CHECKPOINT: ''

@@ -1,85 +1,115 @@
 import torch
 
 from lib.engine.perceptual_loss import PerceptualLoss
+from lib.engine.contextual_loss import ContextualLoss
 
 from torch import nn
 from torch.nn import functional as F
 
+import torchvision.models.vgg as vgg
+
+import random
+
 class MultiLoss(nn.Module):
     def __init__(self, cfg):
         super(MultiLoss, self).__init__()
+
+        # weights
         self.w_per = cfg.LOSS.WEIGHT_PERCEPTUAL
         self.w_atlas = cfg.LOSS.WEIGHT_ATLAS
-        self.w_hsv = cfg.LOSS.WEIGHT_HSV        
+        self.w_atlas_ref = cfg.LOSS.WEIGHT_ATLAS_REF
+        self.w_atlas_unity = cfg.LOSS.WEIGHT_ATLAS_UNIFY
+        self.w_hsv = cfg.LOSS.WEIGHT_HSV                        
 
-        self.loss_atlas = torch.tensor([0.0])
+        # loss
+        self.loss = torch.tensor([0.0])
         self.loss_rgb = torch.tensor([0.0])
         # self.loss_hsv = torch.tensor([0.0])
-        self.loss = torch.tensor([0.0])
+
+        self.loss_atlas = torch.tensor([0.0])
         self.loss_atlas_ref = torch.tensor([0.0])
         self.loss_atlas_tar = torch.tensor([0.0])
+        self.loss_atlas_unify = torch.tensor([0.0])
 
-        # loss 1 - rgb
-        # self.criterionL1 = torch.nn.L1Loss(reduction='mean')
-        self.L1_per = PerceptualLoss(cfg)
-        # loss 2 - hsv
-        self.L1_hsv = HSVLoss()
-        # loss 3 - atalas
-        self.L1_atlas_ref = TexRGBLoss()
-        self.L1_atlas_tar = TexRGBLoss()
+        # loss functions
+        # create vgg for loss
+        vgg_pretrained_features = vgg.vgg19(pretrained=True).features
 
-    def forward(self, input, target):        
-        # loss persepetual
+        # loss - image
+        self.Perceptual_L1 = PerceptualLoss(cfg, vgg_pretrained_features)
+        # loss - atalas
+        self.Contextural_cosine = ContextualLoss(use_vgg=True, vgg_model=vgg_pretrained_features, vgg_layer='relu5_4',loss_type='cosine')
+        self.AtlasLoss = AtlasLoss(self.w_atlas_ref, self.w_atlas_unity, self.Contextural_cosine)
+        # loss - hsv
+        # self.HSV_L1 = HSVLoss()
+        # loss - hsv
+
+
+    def forward(self, input, target):                
         output_img = input['img_rs']
-        self.loss_rgb = self.w_per * self.L1_per(output_img, target['img'])
 
-        # loss Atlas
-        if 'tex_rs' in input:
-            atlas_rgb = input['tex_rs'] 
-            gt_tex_ref = target['tex_ref']
-            gt_tex_tar = target['tex']
-
-            mask_ref = (gt_tex_ref != 0).int().float()
-            mask_tar = (gt_tex_tar != 0).int().float()
-
-            # # add loss 1
-            # zloss_L1(tex1, tex2)+loss_L1(tex2, tex1)
-            # xxxxxx
-
-
-            self.loss_atlas_ref = self.L1_atlas_ref(atlas_rgb*mask_ref, gt_tex_ref)
-            self.loss_atlas_tar = self.L1_atlas_tar(atlas_rgb*mask_tar, gt_tex_tar)
-            self.loss_atlas = self.w_atlas * (self.loss_atlas_ref + self.loss_atlas_tar)
-
+        # loss 1 persepetual
+        self.loss_rgb = self.w_per * self.Perceptual_L1(output_img, target['img'])
 
         # loss hsv
-        # self.loss_hsv = self.w_hsv * self.L1_hsv(output_img, target)         
+        # self.loss_hsv = self.w_hsv * self.HSV_L1(output_img, target)         
 
         # all
+        self.loss_atlas = self.w_atlas * self.AtlasLoss(input, target)
+
+        self.loss_atlas_ref = self.AtlasLoss.loss_atlas_ref
+        self.loss_atlas_tar = self.AtlasLoss.loss_atlas_tar
+        self.loss_atlas_unify = self.AtlasLoss.loss_atlas_unify
+
         self.loss = self.loss_rgb + self.loss_atlas
         return self.loss
     
-    def loss_list(self): 
-        loss_list ={'Loss':self.loss,
-                    'rgb':self.loss_rgb,
-                    'hsv':self.loss_hsv,
-                    'atlas':self.loss_atlas,
-                    'atlas_ref':self.loss_atlas_ref,
-                    'atlas_tar':self.loss_atlas_tar}
-        return loss_list
+    # def loss_list(self): 
+    #     loss_list ={'Loss':self.loss,
+    #                 'rgb':self.loss_rgb,
+    #                 'hsv':self.loss_hsv,
+    #                 'atlas':self.loss_atlas,
+    #                 'atlas_ref':self.loss_atlas_ref,
+    #                 'atlas_tar':self.loss_atlas_tar}
+    #     return loss_list
 
-'''
-Create a loss to force the first 3 channel of texture to learn rgb values
-'''
-class TexRGBLoss(nn.Module):
-    def __init__(self,):
-        super(TexRGBLoss, self).__init__()
+class AtlasLoss(nn.Module):
+    def __init__(self, w_ref, w_unify, loss_fun):
+        super(AtlasLoss, self).__init__()
+        # self.loss_fun = F.l1_loss
 
-        self.L1Loss = torch.nn.L1Loss(reduction='mean')
+        self.loss_fun = loss_fun
+        self.w_unify = w_unify
+        self.w_ref = w_ref
+        self.loss_atlas_ref = torch.tensor([0.0])
+        self.loss_atlas_tar = torch.tensor([0.0])
+        self.loss_atlas_unify = torch.tensor([0.0])
 
     def forward(self, input, target):
-        loss = self.L1Loss(input, target)
-        return loss
+
+        # loss 2 Atlas
+        atlas_rgb = input['tex_rs'] 
+        gt_tex_ref = target['tex_ref']
+        gt_tex_tar = target['tex']
+
+        mask_ref = (gt_tex_ref != 0).int().float()
+        mask_tar = (gt_tex_tar != 0).int().float()
+
+        # loss_L1(tex1, tex2)+loss_L1(tex2, tex1)
+        
+        self.loss_atlas_ref = self.loss_fun(atlas_rgb*mask_ref, gt_tex_ref)
+        self.loss_atlas_tar = self.loss_fun(atlas_rgb*mask_tar, gt_tex_tar)
+
+        # atalas unify
+        batch_size = atlas_rgb.shape[0]
+        batch_idxs = list(range(0,batch_size))
+        random.shuffle(batch_idxs)
+        self.loss_atlas_unify = self.loss_fun(atlas_rgb, atlas_rgb[batch_idxs, ...].clone().detach()) + \
+                                self.loss_fun(atlas_rgb[batch_idxs, ...], atlas_rgb.clone().detach())
+
+        self.loss_atlas = self.loss_atlas_tar + self.w_ref*self.loss_atlas_ref + self.w_unify*self.loss_atlas_unify
+        
+        return self.loss_atlas
 
 class HSVLoss(nn.Module):
     def __init__(self, h=0, s=1, v=0.7, eps=1e-7, threshold_h=0.03, threshold_sv=0.1):

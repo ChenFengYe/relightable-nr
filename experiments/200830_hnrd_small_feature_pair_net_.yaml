@@ -6,11 +6,29 @@ VERBOSE: True
 LOG:
   CFG_NAME: 200830_GAN_APose.yaml
   LOG_DIR: log
-  PRINT_FREQ: 1000
-  CHECKPOINT_FREQ: 3000
+  PRINT_FREQ: 500
+  CHECKPOINT_FREQ: 2000
 DATASET:
-  DATASET: DPViewDataset # DomeViewDataset DPiewDataset
-  ROOT: 'data/200830_hnrd_SDAP_30714418105'
+  # DATASET: DomeViewDataset
+  # ROOT: 'data/200830_hnrd_SDAP_30714418105'
+  # FRAME_RANGE: [0,1]
+  # CAM_RANGE: [0]  # [id] for single cam_id
+  # IMG_DIR: '*.png'
+  # GAMMA: 1.0
+  # OUTPUT_SIZE: [512, 512]
+
+  # CALIB_PATH: '_/calib/calib20200714_test_orig_17.mat'
+  # CALIB_FORMAT: 'convert'
+  # CAM_MODE: 'projection'
+
+  # # 3D data
+  # TEX_PATH: ''
+  # UV_PATH: './data/200830_hnrd_SDAP_30714418105/mesh_uvsample/smpl_uv_sample.obj'
+  # MESH_DIR: '_/mesh/f_t_30714418105_smplFitting_%05d.obj'
+  # PRELOAD_MESHS: True
+
+  DATASET: DPViewDataset
+  ROOT: 'data/200830_hnrd_SDAP_14442478293'
   FRAME_RANGE: [-1, -1]
   IMG_DIR: '*.jpg'
 
@@ -24,8 +42,6 @@ DATASET:
   TEX_PATH: ''
   UV_PATH: ''
   MESH_DIR: ''
-  PRELOAD_MESHS: False
-  PRELOAD_VIEWS: False  
 
   # MAX_SHIFT: 0
   # MAX_ROTATION: 0
@@ -60,12 +76,23 @@ MODEL:
     NUM_PARAMS: -1
   ALIGN_MODULE:
     MID_CHANNELS: 32
+  GAN:
+    MODE: 'vanilla'
+    LAMBDA_L1: 100.0
+  NET_D:
+    ARCH: 'basic'
+    INPUT_CHANNELS: 10           # 6 = 2 + 3 + 2 + 3 (A_uv, A_img, B_uv, B_img)
+
 LOSS:
-    WEIGHT_PERCEPTUAL: 10.0
+    WEIGHT_GAN_G: 5.0
+    WEIGHT_PERCEPTUAL: 1.0
     WEIGHT_HSV: 0.0
     WEIGHT_ATLAS: 1.0
+    WEIGHT_ATLAS_REF: 0.1
+    WEIGHT_ATLAS_UNIFY: 0.01
+
 TRAIN:
-  EXP_NAME: 'NoAtt_linear'
+  EXP_NAME: 'cam_9views'
   BATCH_SIZE: 2
   BEGIN_EPOCH: 0
   RESUME: False
@@ -82,28 +109,10 @@ TRAIN:
   OPTIMIZER: adam
   
 TEST:
-  # DATASET: DomeViewDataset
-  # ROOT: 'data/200830_hnrd_SDAP_30714418105'
-  # FRAME_RANGE: [0,1]
-  # CAM_RANGE: [0]  # [id] for single cam_id
-  # IMG_DIR: '*.png'
-  # GAMMA: 1.0
-  # OUTPUT_SIZE: [512, 512]
-
-  # CALIB_PATH: '_/calib20200714_test_orig_17.mat'
-  # CALIB_FORMAT: 'convert'
-  # CAM_MODE: 'projection'
-
-  # # 3D data
-  # TEX_PATH: ''
-  # UV_PATH: './data/200830_hnrd_SDAP_30714418105/mesh_uvsample/smpl_test.obj'
-  # MESH_DIR: '_/mesh_smplx2pifu_uv/aligned_%03d_512.obj'
-  # PRELOAD_MESHS: True
-
   BATCH_SIZE: 10
   FRAME_RANGE: [-1,-1]
-  MODEL_PATH: './model_epoch_666_iter_6000_.pth'
-  SAVE_FOLDER: '200831_test'
+  MODEL_PATH: 'model_epoch_1333_iter_12000_.pth'
+  SAVE_FOLDER: '200901_test'
 DEBUG:
   DEBUG: False
   SAVE_TRANSFORMED_IMG: False
