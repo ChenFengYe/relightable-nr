@@ -19,8 +19,16 @@ class Args():
         self.cfg = cfg
         self.opts = opts
 
-args = Args('/new_disk/chenxin/relightable-nr/data/200830_hnrd_SDAP_14442478293/logs/09-02_16-34-18_cam_9views/200830_GAN_APose.yaml',
-            ['WORKERS','0', 'TEST.BATCH_SIZE','1'])
+# trump
+model_path = '/new_disk/chenxin/relightable-nr/data/200906_trump/logs/09-06_11-04-21_test_8_trump_from_internet/200903_GAN_APose.yaml'
+
+# # sport short male running
+# model_path = '/new_disk/chenxin/relightable-nr/data/200903_justin/logs/09-03_16-02-04_cam_9views/200903_GAN_APose.yaml' 
+
+# # shirt female Apose
+# model_path = '/new_disk/chenxin/relightable-nr/data/200830_hnrd_SDAP_14442478293/logs/09-02_16-34-18_cam_9views/200830_GAN_APose.yaml' 
+
+args = Args(model_path, ['WORKERS','0', 'TEST.BATCH_SIZE','1'])
 
 # args = Args('/new_disk/chenxin/relightable-nr/data/200830_hnrd_SDAP_30714418105/logs/08-31_07-21-59_NoAtt_linear/200830_GAN_APose.yaml',
 #             ['WORKERS','0', 'TEST.BATCH_SIZE','1'])
@@ -55,8 +63,9 @@ def prepare_camera_transform(obj, Ts):
 
     center = torch.mean(in_points,dim=0).cpu()
     # up = -torch.mean(Ts[:,0:3,0],dim =0)
-    # up = -torch.tensor([0.,0.,1.])
-    up = torch.tensor([0.,1.,0.]) # dome camera
+    up = -torch.tensor([0.,0.,1.])
+    # up = torch.tensor([0.,0.,1.])
+    # up = torch.tensor([0.,1.,0.]) # dome camera
     # up = -Ts[0:3,0]
     up = up / torch.norm(up)
         
@@ -96,17 +105,34 @@ def prepare_camera_transform(obj, Ts):
     cam_data['dis'] = dis
     return cam_data
 
+def control_cam(data):
+    op=data['op']    
+    global control_speed
+    global is_rotate
+    if op[0] == 9:
+        is_rotate = not is_rotate   
+    elif op[0] == 10:
+        control_speed = control_speed+1
+    elif op[0] == 11:
+        control_speed = control_speed-1
+
+    if is_rotate:
+        op[0] = 1 
+    return data
+
 def calculate_cam_pose(data, cam_data):
-    center = cam_data['center']
-    up = cam_data['up']
-    dis = cam_data['dis']
-    
-    # calculate cam
-    op=data['op']        
-    angle = 3.1415926*2/360.0    
-    
+    global control_speed
     global pos
     global xaxis
+
+    center = cam_data['center']
+    up = cam_data['up']
+    dis = cam_data['dis']*2**control_speed
+    
+    # calculate cam
+    op=data['op']
+    angle = 3.1415926*2/360.0*2**control_speed
+    
     pos = pos - center
     if op[0]==1:
         print('LeftLook')
@@ -178,6 +204,12 @@ Ts = view_dataset.poses_all[0]
 Ts = np.dot(Ts, view_dataset.global_RT_inv)
 cam_data = prepare_camera_transform(obj, Ts)
 
+# prepare interaction
+global is_rotate
+is_rotate = False
+global control_speed
+control_speed = 1.0
+
 @app.route('/', methods = ["GET","POST"])
 def hello_world():
     t_start_all = time.time()
@@ -190,7 +222,9 @@ def hello_world():
     # generate view
     # view_data = view_dataset.__getitem__(0)
     # T = view_data['pose'][0,...]
+    data = control_cam(data)
     T = calculate_cam_pose(data, cam_data)
+
     global global_view_data
     global_view_data['f_idx'] = calculate_frame(data, global_view_data['f_idx'], view_dataset.frame_range)    
     global_view_data = view_dataset.read_view_from_cam(global_view_data, T)

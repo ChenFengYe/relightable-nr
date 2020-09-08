@@ -233,12 +233,12 @@ class DPViewDataset():
             mask = mask[0, ...]
         return {'img': img, 'uv_map': uvmap, 'mask': mask}
 
-    def load_tex(self, img_name, img, uv_map, save_cal=True):
+    def load_tex(self, img_name, img, uv_map, save_cal=True, overwrite=False):
         img_key = os.path.splitext(img_name)[0]
         tex_path = os.path.join(self.root_dir, 'tex', img_key+".png")
         tex_nearest_path = os.path.join(self.root_dir, 'tex_nearest', img_key+".png")
 
-        if not os.path.exists(tex_path) and not os.path.exists(tex_nearest_path):
+        if overwrite or (not os.path.exists(tex_path) and not os.path.exists(tex_nearest_path)):
             tex = self.generate_tex(img, uv_map)
             if save_cal:
                 cv2.imwrite(tex_path, tex.numpy()[...,::-1]*255)

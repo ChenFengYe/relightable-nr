@@ -38,8 +38,8 @@ _C.DATASET.GEN_TEX = False
 _C.DATASET.TEX_INTERPOLATER = 'nearest'
 
 _C.DATASET.ROOT = 'data/realdome_cx'    # Root folder for img_dir and mesh_dir
-_C.DATASET.FRAME_RANGE = [0,100]
-_C.DATASET.CAM_RANGE = [0,100]
+_C.DATASET.FRAME_RANGE = [-1,-1]
+_C.DATASET.CAM_RANGE = [-1,-1]
 _C.DATASET.IMG_DIR = '_/rgb0/%03d.png'
 _C.DATASET.MESH_DIR = '_/mesh/%03d.obj'
 _C.DATASET.GAMMA = 1.0

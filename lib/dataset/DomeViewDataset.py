@@ -404,10 +404,15 @@ class DomeViewDataset(DPViewDataset):
         # mask_dir='./data/200830_hnrd_SDAP_30714418105/mask'
         # img_name_ref = 'SDAP_30714418105_38_00000.jpg'
 
-        img_dir='./data/200830_hnrd_SDAP_14442478293/img'
-        uvmap_dir='./data/200830_hnrd_SDAP_14442478293/uv'
-        mask_dir='./data/200830_hnrd_SDAP_14442478293/mask'
-        img_name_ref = 'SDAP_14442478293_35_00000.jpg'
+        # img_dir='./data/200830_hnrd_SDAP_14442478293/img'
+        # uvmap_dir='./data/200830_hnrd_SDAP_14442478293/uv'
+        # mask_dir='./data/200830_hnrd_SDAP_14442478293/mask'
+        # img_name_ref = 'SDAP_14442478293_35_00000.jpg'
+
+        img_dir='./data/200903_justin/img'
+        uvmap_dir='./data/200903_justin/uv'
+        mask_dir='./data/200903_justin/mask'
+        img_name_ref = 'view_1.jpg'
 
         view_ref_data = self.load_view(img_name_ref, img_dir, uvmap_dir, mask_dir)
         tex_ref = self.load_tex(img_name_ref, view_ref_data['img'], view_ref_data['uv_map'], save_cal=True)

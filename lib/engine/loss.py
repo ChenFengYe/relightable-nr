@@ -76,9 +76,8 @@ class MultiLoss(nn.Module):
 class AtlasLoss(nn.Module):
     def __init__(self, w_ref, w_unify, loss_fun):
         super(AtlasLoss, self).__init__()
-        # self.loss_fun = F.l1_loss
-
-        self.loss_fun = loss_fun
+        self.loss_fun = F.l1_loss
+        # self.loss_fun = loss_fun
         self.w_unify = w_unify
         self.w_ref = w_ref
         self.loss_atlas_ref = torch.tensor([0.0])
@@ -97,17 +96,17 @@ class AtlasLoss(nn.Module):
 
         # loss_L1(tex1, tex2)+loss_L1(tex2, tex1)
         
-        self.loss_atlas_ref = self.loss_fun(atlas_rgb*mask_ref, gt_tex_ref)
+        self.loss_atlas_ref = self.w_ref * self.loss_fun(atlas_rgb*mask_ref, gt_tex_ref)
         self.loss_atlas_tar = self.loss_fun(atlas_rgb*mask_tar, gt_tex_tar)
 
         # atalas unify
         batch_size = atlas_rgb.shape[0]
         batch_idxs = list(range(0,batch_size))
         random.shuffle(batch_idxs)
-        self.loss_atlas_unify = self.loss_fun(atlas_rgb, atlas_rgb[batch_idxs, ...].clone().detach()) + \
-                                self.loss_fun(atlas_rgb[batch_idxs, ...], atlas_rgb.clone().detach())
+        self.loss_atlas_unify = self.w_unify*(self.loss_fun(atlas_rgb, atlas_rgb[batch_idxs, ...].clone().detach()) + \
+                                self.loss_fun(atlas_rgb[batch_idxs, ...], atlas_rgb.clone().detach()))
 
-        self.loss_atlas = self.loss_atlas_tar + self.w_ref*self.loss_atlas_ref + self.w_unify*self.loss_atlas_unify
+        self.loss_atlas = self.loss_atlas_tar + self.loss_atlas_ref + self.loss_atlas_unify
         
         return self.loss_atlas
 
