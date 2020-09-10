@@ -70,10 +70,15 @@ class Pix2PixModel(torch.nn.Module):
         # self.real_B = input['B' if AtoB else 'A'].to(self.device)
         # self.image_paths = input['A_paths' if AtoB else 'B_paths']            
 
-        self.real_A = input['img_ref'].to(self.device)
+        real_AMask = input['mask_ref'].to(self.device)[:,None,:,:].to(self.device)
+        real_AImg = input['img_ref'].to(self.device) * real_AMask
+        self.real_A = torch.cat((real_AImg, real_AMask), 1)
         self.real_ATex = input['tex_ref'].to(self.device)
+
         if self.isTrain:
-            self.real_B = input['img'].to(self.device)
+            real_BMask = input['mask'].to(self.device)[:,None,:,:].to(self.device)
+            real_BImg = input['img'].to(self.device) * real_BMask
+            self.real_B = torch.cat((real_BImg, real_BMask), 1)
             self.real_BTex = input['tex_tar'].to(self.device)
             self.real_A_UV = input['uv_map_ref'].to(self.device).permute(0,3,1,2)
             self.real_B_UV = input['uv_map'].to(self.device).permute(0,3,1,2)
@@ -99,16 +104,9 @@ class Pix2PixModel(torch.nn.Module):
 
     def forward(self, input):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_out  = self.netG(input)  # G(A)
-
-        if self.isTrain:
-            alpha_map = input['mask'][:,None,:,:].to(self.device)
-            # to-do change to dict
-            self.fake_out['img_rs'] = self.fake_out['img_rs'] * alpha_map
-            self.fake_out['nimg_rs'] = self.fake_out['nimg_rs'] * alpha_map
-            self.real_B = self.real_B * alpha_map
-                
-        self.fake_B = self.fake_out['img_rs']
+        self.fake_out  = self.netG(input)  # G(A)               
+        self.fake_B = self.fake_out['rs']
+        self.fake_B[:,0:3,:,:] = self.fake_B[:,0:3,:,:].clone() * self.fake_B[:,3:4,:,:].clone().repeat(1,3,1,1)
 
     def backward_D(self):
         """Calculate GAN loss for the discriminator"""
@@ -132,7 +130,7 @@ class Pix2PixModel(torch.nn.Module):
         self.loss_G_GAN = self.criterionGAN(pred_fake, True)
         # Second, G(A) = B
         ##################################################################
-        gt_set = {'img':self.real_B, 'tex':self.real_BTex, 'tex_ref':self.real_ATex}
+        gt_set = {'gt':self.real_B, 'tex':self.real_BTex, 'tex_ref':self.real_ATex}
         self.loss_G_Multi = self.criterionMulti(self.fake_out, gt_set)
         # for vis
         self.loss_G_per = self.criterionMulti.loss_rgb
@@ -147,6 +145,7 @@ class Pix2PixModel(torch.nn.Module):
     def optimize_parameters(self, view_data):
         self.set_input(view_data)
 
+        # with torch.autograd.set_detect_anomaly(True):
         self.forward(view_data)          # compute fake images: G(A)
         # update D
         self.set_requires_grad(self.netD, True)  # enable backprop for D

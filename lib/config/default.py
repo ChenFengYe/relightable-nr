@@ -77,6 +77,7 @@ _C.DATASET.FLIP = 0.5
 # common params for NETWORK
 _C.MODEL = CN()
 _C.MODEL.INIT_WEIGHTS = True
+_C.MODEL.VGG_PATH = './models/vgg19-dcbb9e9d.pth'
 _C.MODEL.NAME = 'RenderNet'
 # _C.MODEL.SYNC_BN = True
 _C.MODEL.PRETRAINED = ''
@@ -107,7 +108,7 @@ _C.MODEL.GAN.MODE = 'vanilla'
 _C.MODEL.GAN.LAMBDA_L1 = 100.0              # weight for L1 loss, the training objective is: GAN Loss + lambda_L1 * ||G(A)-B||_1
 
 _C.MODEL.NET_D = CN()
-_C.MODEL.NET_D.ARCH = 'basic'               # Specify discriminator architecture [basic | n_layers | pixel]. The basic model is a 70x70 PatchGAN. n_layers allows you to specify the layers in the discriminator
+_C.MODEL.NET_D.ARCH = 'multiscale'               # Specify discriminator architecture [basic | n_layers | pixel | multiscale]. The basic model is a 70x70 PatchGAN. n_layers allows you to specify the layers in the discriminator
 _C.MODEL.NET_D.INPUT_CHANNELS = 6           # 6 = 3 + 3 (fake img + real img)
 # _C.MODEL.NET_D.OUTPUT_CHANNELS = 3
 _C.MODEL.NET_D.N_LAYERS_D = 3               # Only used if netD==n_layers
@@ -122,8 +123,8 @@ _C.TRAIN.EXP_NAME = 'example'
 _C.TRAIN.BATCH_SIZE = 1
 _C.TRAIN.BEGIN_EPOCH = 0
 _C.TRAIN.RESUME = False
-_C.TRAIN.SAMPLING_PATTERN = 'skipinv_10'         # Sampling of image training sequences_C.TRAIN.CHECKPOINT = ''
-_C.TRAIN.SAMPLING_PATTERN_VAL = 'skip_10'
+_C.TRAIN.SAMPLING_PATTERN = 'all' # skipinv_10          # Sampling of image training sequences_C.TRAIN.CHECKPOINT = ''
+_C.TRAIN.SAMPLING_PATTERN_VAL = 'all' # skipinv_10
 _C.TRAIN.SAMPLING_PAIRWISE = False
 _C.TRAIN.SAMPLING_PAIRMODE = 'all'
 _C.TRAIN.CHECKPOINT = ''

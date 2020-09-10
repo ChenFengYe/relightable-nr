@@ -57,7 +57,12 @@ class ContextualLoss(nn.Module):
                     [[[0.229]], [[0.224]], [[0.225]]], requires_grad=False)
             )
 
-    def forward(self, x, y):
+    def forward(self, x_device, y_device):
+        device = x_device.get_device()
+
+        x = x_device.cuda()
+        y = y_device.cuda()
+        
         if hasattr(self, 'vgg_model'):
             assert x.shape[1] == 3 and y.shape[1] == 3,\
                 'VGG model takes 3 chennel images.'
@@ -70,7 +75,7 @@ class ContextualLoss(nn.Module):
             x = getattr(self.vgg_model(x), self.vgg_layer)
             y = getattr(self.vgg_model(y), self.vgg_layer)
 
-        return contextual_loss(x, y, self.band_width, self.loss_type)
+        return contextual_loss(x, y, self.band_width, self.loss_type).to(device)
 
 #################################################################################################
 # __all__ = ['contextual_loss', 'contextual_bilateral_loss']

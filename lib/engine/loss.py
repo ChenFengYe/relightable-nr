@@ -10,6 +10,22 @@ import torchvision.models.vgg as vgg
 
 import random
 
+# refer to https://chsasank.github.io/vision/_modules/torchvision/models/vgg.html
+# can change it to torchvision.models.vgg.vgg19 
+def vgg19(vgg_path, pretrained=False, **kwargs):
+    """VGG 19-layer model (configuration "E")
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+    """
+    cfg_E = [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M']
+    model = vgg.VGG(vgg.make_layers(cfg_E), **kwargs)
+    if pretrained:
+        # model.load_state_dict(model_zoo.load_url(model_urls['vgg19']))
+        vgg_model = torch.load(vgg_path, map_location='cpu')
+        model.load_state_dict(vgg_model)
+    return model
+
 class MultiLoss(nn.Module):
     def __init__(self, cfg):
         super(MultiLoss, self).__init__()
@@ -33,26 +49,35 @@ class MultiLoss(nn.Module):
 
         # loss functions
         # create vgg for loss
-        vgg_pretrained_features = vgg.vgg19(pretrained=True).features
+        vgg_pretrained_features = vgg19(cfg.MODEL.VGG_PATH, pretrained=True).features
+        # vgg_pretrained_features = vgg.vgg19(pretrained=True).features
 
         # loss - image
         self.Perceptual_L1 = PerceptualLoss(cfg, vgg_pretrained_features)
+        self.Perceptual_L1 = self.Perceptual_L1.cuda()
         # loss - atalas
-        self.Contextural_cosine = ContextualLoss(use_vgg=True, vgg_model=vgg_pretrained_features, vgg_layer='relu5_4',loss_type='cosine')
-        self.AtlasLoss = AtlasLoss(self.w_atlas_ref, self.w_atlas_unity, self.Contextural_cosine)
+        # self.Contextural_cosine = ContextualLoss(use_vgg=True, vgg_model=vgg_pretrained_features, vgg_layer='relu5_4',loss_type='cosine')
+        # self.Contextural_cosine = self.Contextural_cosine.cuda()
+        # self.AtlasLoss = AtlasLoss(self.w_atlas_ref, self.w_atlas_unity, self.Contextural_cosine)
+
+        self.AtlasLoss = AtlasLoss(self.w_atlas_ref, self.w_atlas_unity)
         # loss - hsv
         # self.HSV_L1 = HSVLoss()
         # loss - hsv
 
 
     def forward(self, input, target):                
-        output_img = input['img_rs']
+        rs = input['rs']
+        gt = target['gt']
+        mask_gt = gt[:,3:4,:,:].clone().repeat(1,3,1,1)
+        rs[:,0:3,:,:] = rs[:,0:3,:,:].clone() * mask_gt
+        gt[:,0:3,:,:] = gt[:,0:3,:,:].clone() * mask_gt
 
         # loss 1 persepetual
-        self.loss_rgb = self.w_per * self.Perceptual_L1(output_img, target['img'])
+        self.loss_rgb = self.w_per * self.Perceptual_L1(rs, gt)
 
         # loss hsv
-        # self.loss_hsv = self.w_hsv * self.HSV_L1(output_img, target)         
+        # self.loss_hsv = self.w_hsv * self.HSV_L1(img_rs, target)         
 
         # all
         self.loss_atlas = self.w_atlas * self.AtlasLoss(input, target)
@@ -74,10 +99,9 @@ class MultiLoss(nn.Module):
     #     return loss_list
 
 class AtlasLoss(nn.Module):
-    def __init__(self, w_ref, w_unify, loss_fun):
+    def __init__(self, w_ref, w_unify, loss_fun = F.l1_loss):
         super(AtlasLoss, self).__init__()
-        self.loss_fun = F.l1_loss
-        # self.loss_fun = loss_fun
+        self.loss_fun = loss_fun
         self.w_unify = w_unify
         self.w_ref = w_ref
         self.loss_atlas_ref = torch.tensor([0.0])
@@ -195,16 +219,19 @@ class HSVLoss(nn.Module):
 
 class GANLoss(nn.Module):
     """Define different GAN objectives.
+
     The GANLoss class abstracts away the need to create the target label tensor
     that has the same size as the input.
     """
 
     def __init__(self, gan_mode, target_real_label=1.0, target_fake_label=0.0):
         """ Initialize the GANLoss class.
+
         Parameters:
             gan_mode (str) - - the type of GAN objective. It currently supports vanilla, lsgan, and wgangp.
             target_real_label (bool) - - label for a real image
             target_fake_label (bool) - - label of a fake image
+
         Note: Do not use sigmoid as the last layer of Discriminator.
         LSGAN needs no sigmoid. vanilla GANs will handle it with BCEWithLogitsLoss.
         """
@@ -223,9 +250,11 @@ class GANLoss(nn.Module):
 
     def get_target_tensor(self, prediction, target_is_real):
         """Create label tensors with the same size as the input.
+
         Parameters:
             prediction (tensor) - - tpyically the prediction from a discriminator
             target_is_real (bool) - - if the ground truth label is for real images or fake images
+
         Returns:
             A label tensor filled with ground truth label, and with the size of the input
         """
@@ -238,15 +267,28 @@ class GANLoss(nn.Module):
 
     def __call__(self, prediction, target_is_real):
         """Calculate loss given Discriminator's output and grount truth labels.
+
         Parameters:
             prediction (tensor) - - tpyically the prediction output from a discriminator
             target_is_real (bool) - - if the ground truth label is for real images or fake images
+
         Returns:
             the calculated loss.
         """
         if self.gan_mode in ['lsgan', 'vanilla']:
-            target_tensor = self.get_target_tensor(prediction, target_is_real)
-            loss = self.loss(prediction, target_tensor)
+            # target_tensor = self.get_target_tensor(prediction, target_is_real)
+            # loss = self.loss(prediction, target_tensor)
+
+            if isinstance(prediction, list):
+                loss = 0
+                for pred in prediction:
+                    target_tensor = self.get_target_tensor(pred[-1], target_is_real)
+                    loss += self.loss(pred[-1], target_tensor)
+                return loss
+            else:
+                target_tensor = self.get_target_tensor(prediction, target_is_real)
+                return self.loss(prediction, target_tensor)
+
         elif self.gan_mode == 'wgangp':
             if target_is_real:
                 loss = -prediction.mean()

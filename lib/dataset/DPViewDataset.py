@@ -51,6 +51,7 @@ class DPViewDataset():
                 name_set = [cfg.DATASET.IMG_DIR % (frame_idx) for frame_idx in self.frame_range]
             else:
                 name_set = os.listdir(self.img_dir)
+            
             for img_name in name_set:
                 # check all data
                 img_key = os.path.splitext(img_name)[0]

@@ -31,7 +31,7 @@ class FeaturePairNet(torch.nn.Module):
         # render net
         self.render_module = network.RenderingModule(nf0 = cfg.MODEL.RENDER_MODULE.NF0,
                                     in_channels = cfg.MODEL.TEX_MAPPER.NUM_CHANNELS,
-                                    out_channels = 3,
+                                    out_channels = cfg.MODEL.RENDER_MODULE.OUTPUT_CHANNELS,
                                     num_down_unet = cfg.MODEL.RENDER_MODULE.NUM_DOWN,
                                     use_gcn = False)
 
@@ -68,14 +68,15 @@ class FeaturePairNet(torch.nn.Module):
             neural_tex = self.feature_module(ref_tex)
 
             neural_img = self.texture_no_grad_mapper(uv_map=uv_map, neural_tex=neural_tex)
-            outputs_img = self.render_module(neural_img)            
+            rs = self.render_module(neural_img)            
         else:
             pass
 
         atlas = self.get_atalas(ref_tex, neural_tex)
-        outputs = {'img_rs':outputs_img, 'tex_rs':neural_tex[:,0:3,:,:], 'nimg_rs':neural_img[:,0:3,:,:],
+        # outputs_img = outputs[:,0:3,:,:]
+        # outputs_mask = outputs[:,3:4,:,:]
+        outputs = {'rs':rs, 'tex_rs':neural_tex[:,0:3,:,:], 'nimg_rs':neural_img[:,0:3,:,:],
                    'atlas':atlas, 'ref_tex':ref_tex}
-        # outputs = torch.cat((outputs_img, neural_tex, atlas), dim = 1)        
         return outputs
 
     def parameters(self):

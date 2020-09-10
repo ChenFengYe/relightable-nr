@@ -42,6 +42,7 @@ def main():
     print(' Batch size: '+ str(cfg.TRAIN.BATCH_SIZE))
     # if not cfg.GPUS == 'None':        
     # os.environ["CUDA_VISIBLE_DEVICES"]=str(cfg.GPUS)[1:-1]
+    os.environ["CUDA_VISIBLE_DEVICES"]='2'
 
     # import pytorch after set cuda
     import torch
@@ -69,6 +70,13 @@ def main():
     from lib.utils.model import save_checkpoint
     # device = torch.device('cuda: 2'+ str(cfg.GPUS[-1]))
     print("*" * 100)
+    torch.__version__ # Get PyTorch and CUDA version
+    torch.cuda.is_available() # Check that CUDA works
+    torch.cuda.device_count() # Check how many CUDA capable devices you have
+
+    # Print device human readable names
+    torch.cuda.get_device_name(0)
+    # Add more lines with +1 like get_device_name(3), get_device_name(4) if you have more devices.
 
     print("Build dataloader ...")
     view_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg, isTrain=True)
@@ -142,7 +150,11 @@ def main():
                         print(name, True if param.grad is not None else False)
 
             outputs = model_net.get_current_results()
-            outputs_img = outputs['img_rs']
+            outputs_img = outputs['rs'][:,0:3,:,:].clone().detach().cpu()
+            outputs_mask = outputs['rs'][:,3:4,:,:].clone().detach().cpu()
+            outputs_img *= outputs_mask
+            outputs['img_rs'] = outputs_img
+            outputs['mask_rs'] = outputs_mask
             # neural_img = outputs['nimg_rs'].clone().detach().cpu()
             
             # Metrics

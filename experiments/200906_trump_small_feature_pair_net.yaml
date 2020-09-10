@@ -74,7 +74,7 @@ MODEL:
     MODE: 'vanilla'
     LAMBDA_L1: 100.0
   NET_D:
-    ARCH: 'basic'
+    ARCH: 'multiscale'
     INPUT_CHANNELS: 10           # 6 = 2 + 3 + 2 + 3 (A_uv, A_img, B_uv, B_img)
 
 LOSS:

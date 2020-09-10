@@ -1,13 +1,13 @@
 AUTO_RESUME: True
 GPUS: 0,
-DIST_URL: 'tcp://127.0.0.1:23458'
+DIST_URL: 'tcp://127.0.0.1:23460'
 VERBOSE: True
 
 LOG:
-  CFG_NAME: 200903_GAN_APose.yaml
+  CFG_NAME: 200909_GANHD_Contextual_mask.yaml
   LOG_DIR: log
-  PRINT_FREQ: 500
-  CHECKPOINT_FREQ: 2000
+  PRINT_FREQ: 200
+  CHECKPOINT_FREQ: 1000
 DATASET:
   # DATASET: DomeViewDataset
   # ROOT: 'data/200830_hnrd_SDAP_30714418105'
@@ -28,9 +28,9 @@ DATASET:
   # PRELOAD_MESHS: True
 
   DATASET: DPViewDataset
-  ROOT: 'data/200903_justin'
-  FRAME_RANGE: [-1, -1]
-  IMG_DIR: '*.jpg'
+  ROOT: 'data/200909_fashion_small'
+  FRAME_RANGE: [0, 11]
+  IMG_DIR: 's02_view_%02d.png'
 
   OUTPUT_SIZE: [512, 512]
 
@@ -57,7 +57,7 @@ MODEL:
     NUM_DOWN: 5
     NUM_PARAMS: -1
   TEX_MAPPER:
-    NUM_CHANNELS: 16
+    NUM_CHANNELS: 24
     NUM_SIZE: 512
     MIPMAP_LEVEL: 1
     SH_BASIS: False
@@ -66,7 +66,7 @@ MODEL:
   RENDER_MODULE:
     NF0: 64
     NUM_DOWN: 5
-    OUTPUT_CHANNELS: 3
+    OUTPUT_CHANNELS: 4
     NUM_PARAMS: -1
   ALIGN_MODULE:
     MID_CHANNELS: 32
@@ -74,8 +74,8 @@ MODEL:
     MODE: 'vanilla'
     LAMBDA_L1: 100.0
   NET_D:
-    ARCH: 'basic'
-    INPUT_CHANNELS: 10           # 6 = 2 + 3 + 2 + 3 (A_uv, A_img, B_uv, B_img)
+    ARCH: 'multiscale'
+    INPUT_CHANNELS: 12           # 12 = 2 + 4 + 2 + 4 (A_uv, A_imgMask, B_uv, B_imgMask)
 
 LOSS:
     WEIGHT_GAN_G: 5.0
@@ -86,8 +86,8 @@ LOSS:
     WEIGHT_ATLAS_UNIFY: 0.01
 
 TRAIN:
-  EXP_NAME: 'cam_9views'
-  BATCH_SIZE: 2
+  EXP_NAME: 'ganhd_mask'
+  BATCH_SIZE: 4
   BEGIN_EPOCH: 0
   RESUME: False
   CHECKPOINT: ''
