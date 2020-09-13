@@ -22,6 +22,7 @@ _C.VERBOSE = True
 _C.OUTPUT_DIR = ''
 # _C.DATA_DIR = ''
 
+############################################################################
 _C.LOG = CN()
 _C.LOG.CFG_NAME = 'config_name.yaml'
 _C.LOG.LOG_DIR = 'log'
@@ -29,11 +30,10 @@ _C.LOG.LOGGING_ROOT = ''                # Path to directory where to write tenso
 _C.LOG.PRINT_FREQ = 100
 _C.LOG.CHECKPOINT_FREQ = 100
 
+############################################################################
 # DATASET related params
 _C.DATASET = CN()
 _C.DATASET.DATASET = 'realdome_cx'
-_C.DATASET.DATASET_TEST = 'realdome_cx'
-
 _C.DATASET.GEN_TEX = False
 _C.DATASET.TEX_INTERPOLATER = 'nearest'
 
@@ -56,7 +56,8 @@ _C.DATASET.UV_PATH = ''                 # Preset uv for all frame
 _C.DATASET.UV_CONVERTER = './data/UVTextureConverter/densepose_to_SMPL_fix.npy'                 # Preset uv for all frame
 
 # Relight params
-_C.DATASET.LIGHTING_IDX = 0
+# _C.DATASET.LIGHTING_IDX = 0
+
 # Training data augmentation
 _C.DATASET.MAX_SHIFT = 0
 _C.DATASET.MAX_ROTATION = 0
@@ -73,7 +74,31 @@ _C.DATASET.FLIP = 0.5
 # # train test split
 # _C.DATASET.TEST_SET = ''
 # _C.DATASET.TRAIN_SET = ''
-
+############################################################################
+# DATASET related params
+_C.DATASET_FVV = CN()
+_C.DATASET_FVV.DATASET = 'realdome_cx'
+_C.DATASET_FVV.ROOT = 'data/realdome_cx'    # Root folder for img_dir and mesh_dir
+_C.DATASET_FVV.FRAME_RANGE = [-1,-1]
+_C.DATASET_FVV.CAM_RANGE = [-1,-1]
+_C.DATASET_FVV.IMG_DIR = '_/rgb0/%03d.png'
+_C.DATASET_FVV.MESH_DIR = '_/mesh/%03d.obj'
+_C.DATASET_FVV.OUTPUT_SIZE = [512,512]
+_C.DATASET_FVV.CALIB_PATH = '_/test_calib53/calib20200619_test_mid_53.mat'
+_C.DATASET_FVV.CALIB_FORMAT = 'convert'
+_C.DATASET_FVV.CAM_MODE = 'projection' # projection or orthogonal
+# 3D computing
+_C.DATASET_FVV.PRELOAD_MESHS = False
+_C.DATASET_FVV.PRELOAD_VIEWS = False
+_C.DATASET_FVV.TEX_PATH = ''
+_C.DATASET_FVV.UV_PATH = ''                 # Preset uv for all frame
+_C.DATASET_FVV.UV_CONVERTER = './data/UVTextureConverter/densepose_to_SMPL_fix.npy'                 # Preset uv for all frame
+# Training data augmentation
+_C.DATASET_FVV.MAX_SHIFT = 0
+_C.DATASET_FVV.MAX_ROTATION = 0
+_C.DATASET_FVV.MAX_SCALE = 1.0
+_C.DATASET_FVV.FLIP = 0.5
+############################################################################
 # common params for NETWORK
 _C.MODEL = CN()
 _C.MODEL.INIT_WEIGHTS = True
@@ -117,7 +142,7 @@ _C.MODEL.NET_D.NORM = 'batch'               # Instance normalization or batch no
 _C.MODEL.NET_D.INIT_TYPE = 'normal'         # Network initialization [normal | xavier | kaiming | orthogonal]
 _C.MODEL.NET_D.INIT_GAIN = 0.02             # Scaling factor for normal, xavier and orthogonal
 
-
+############################################################################
 _C.TRAIN = CN()
 _C.TRAIN.EXP_NAME = 'example'
 _C.TRAIN.BATCH_SIZE = 1
@@ -142,6 +167,7 @@ _C.TRAIN.OPTIMIZER = 'adam'
 # _C.TRAIN.MOMENTUM = 0.9
 # _C.TRAIN.WD = 0.0001
 
+############################################################################
 _C.LOSS = CN()
 _C.LOSS.PERCEPTUALLOSS = "L1"
 _C.LOSS.WEIGHT_GAN_G = 1.0
@@ -150,7 +176,9 @@ _C.LOSS.WEIGHT_HSV = 1.0
 _C.LOSS.WEIGHT_ATLAS = 1.0
 _C.LOSS.WEIGHT_ATLAS_REF = 0.1
 _C.LOSS.WEIGHT_ATLAS_UNIFY = 0.01
+_C.LOSS.WEIGHT_VIEWS = 0.01
 
+############################################################################
 _C.TEST = CN()
 _C.TEST.BATCH_SIZE = 3
 _C.TEST.FRAME_RANGE = [0,100]
@@ -165,6 +193,7 @@ _C.TEST.SAVE_FOLDER = 'img_test'            # Save folder for test imgs
 #_C.TEST.SCALE_FACTOR = [1]
 _C.TEST.LOG_PROGRESS = False
 
+############################################################################
 _C.DEBUG = CN()
 _C.DEBUG.DEBUG = False
 _C.DEBUG.SAVE_TRANSFORMED_IMG = False
@@ -182,9 +211,16 @@ def update_config(cfg, args):
     cfg.merge_from_list(args.opts)
     (cfg_path, cfg_name) = os.path.split(args.cfg)
 
+    if cfg.TRAIN.CHECKPOINT and cfg.TRAIN.CHECKPOINT[:2] == '_/':
+        cfg.TRAIN.CHECKPOINT = os.path.join(cfg.DATASET.ROOT, cfg.TRAIN.CHECKPOINT[2:])
+    if cfg.TRAIN.CHECKPOINT:    
+        cfg.TRAIN.CHECKPOINT_DIR = cfg.TRAIN.CHECKPOINT.split('/')[-2]
+        cfg.TRAIN.CHECKPOINT_NAME = cfg.TRAIN.CHECKPOINT.split('/')[-1]
+
     # Add path under root folder
     if cfg.TEST.CALIB_PATH and cfg.TEST.CALIB_PATH[:2] == '_/':
         cfg.TEST.CALIB_PATH = os.path.join(cfg.DATASET.ROOT, cfg.TEST.CALIB_PATH[2:])
+    cfg.TEST.FRAME_RANGE = set_range(cfg.TEST.FRAME_RANGE)
     
     # find test model
     if not os.path.exists(cfg.TEST.MODEL_PATH):
@@ -203,74 +239,48 @@ def update_config(cfg, args):
         cfg.DATASET.CALIB_PATH = os.path.join(cfg.DATASET.ROOT, cfg.DATASET.CALIB_PATH[2:])
     if cfg.DATASET.MESH_DIR[:2] == '_/':
         cfg.DATASET.MESH_DIR = os.path.join(cfg.DATASET.ROOT, cfg.DATASET.MESH_DIR[2:])
+    if cfg.DATASET.CALIB_PATH[:2] == '_/':
+        cfg.DATASET.CALIB_PATH = os.path.join(cfg.DATASET.ROOT, cfg.DATASET.CALIB_PATH[2:])
+        
     if not cfg.DATASET.TEX_PATH and cfg.DATASET.TEX_PATH[:2] == '_/':
         cfg.DATASET.TEX_PATH = os.path.join(cfg.DATASET.ROOT, cfg.DATASET.TEX_PATH[2:])
-        # cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs', 'dnr')
         cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs')
 
     if not cfg.LOG.LOGGING_ROOT:
         cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs')
-        # cfg.LOG.LOGGING_ROOT = os.path.join(cfg.DATASET.ROOT, 'logs', 'dnr')
 
     if cfg.MODEL.PRETRAINED and cfg.MODEL.PRETRAINED[:2] == '_/':
         cfg.MODEL.PRETRAINED = os.path.join(cfg.DATASET.ROOT, cfg.MODEL.PRETRAINED[2:])
     if not os.path.exists(cfg.TRAIN.CHECKPOINT):
         cfg.TRAIN.CHECKPOINT = os.path.join(cfg_path, cfg.TRAIN.CHECKPOINT)
-    if cfg.TRAIN.CHECKPOINT and cfg.TRAIN.CHECKPOINT[:2] == '_/':
-        cfg.TRAIN.CHECKPOINT = os.path.join(cfg.DATASET.ROOT, cfg.TRAIN.CHECKPOINT[2:])
-    if cfg.TRAIN.CHECKPOINT:    
-        cfg.TRAIN.CHECKPOINT_DIR = cfg.TRAIN.CHECKPOINT.split('/')[-2]
-        cfg.TRAIN.CHECKPOINT_NAME = cfg.TRAIN.CHECKPOINT.split('/')[-1]
 
-    # Precompute save folder
-    cfg.DATASET.MESH_PATTERN = cfg.DATASET.MESH_DIR.split('/')[-1].split('.')[0]
-    cfg.DATASET.PRECOMP_DIR = os.path.join(cfg.DATASET.ROOT, 'precomp_' + cfg.DATASET.MESH_PATTERN)
+    # # Precompute save folder
+    # cfg.DATASET.MESH_PATTERN = cfg.DATASET.MESH_DIR.split('/')[-1].split('.')[0]
+    # cfg.DATASET.PRECOMP_DIR = os.path.join(cfg.DATASET.ROOT, 'precomp_' + cfg.DATASET.MESH_PATTERN)
 
     # Precompute frame camera range
     cfg.DATASET.CAM_RANGE = set_range(cfg.DATASET.CAM_RANGE)
     cfg.DATASET.FRAME_RANGE = set_range(cfg.DATASET.FRAME_RANGE)
-    cfg.TEST.FRAME_RANGE = set_range(cfg.TEST.FRAME_RANGE)
-
-    # if not os.path.exists(cfg.DATASET.ROOT):
-    #     cfg.DATASET.ROOT = os.path.join(
-    #         cfg.DATA_DIR, cfg.DATASET.ROOT
-    #     )
-    # cfg.MODEL.PRETRAINED = os.path.join(
-    #     cfg.DATA_DIR, cfg.MODEL.PRETRAINED
-    # )
-    # if cfg.TEST.MODEL_FILE:
-    #     cfg.TEST.MODEL_FILE = os.path.join(
-    #         cfg.DATA_DIR, cfg.TEST.MODEL_FILE
-    #     )
-
-    # if cfg.DATASET.WITH_CENTER:
-    #     cfg.DATASET.NUM_JOINTS += 1
-    #     cfg.MODEL.NUM_JOINTS = cfg.DATASET.NUM_JOINTS
 
     if not isinstance(cfg.DATASET.OUTPUT_SIZE, (list, tuple)):
         cfg.DATASET.OUTPUT_SIZE = [cfg.DATASET.OUTPUT_SIZE]
 
-    # if not isinstance(cfg.LOSS.WITH_HEATMAPS_LOSS, (list, tuple)):
-    #     cfg.LOSS.WITH_HEATMAPS_LOSS = (cfg.LOSS.WITH_HEATMAPS_LOSS)
-
-    # if not isinstance(cfg.LOSS.HEATMAPS_LOSS_FACTOR, (list, tuple)):
-    #     cfg.LOSS.HEATMAPS_LOSS_FACTOR = (cfg.LOSS.HEATMAPS_LOSS_FACTOR)
-
-    # if not isinstance(cfg.LOSS.WITH_AE_LOSS, (list, tuple)):
-    #     cfg.LOSS.WITH_AE_LOSS = (cfg.LOSS.WITH_AE_LOSS)
-
-    # if not isinstance(cfg.LOSS.PUSH_LOSS_FACTOR, (list, tuple)):
-    #     cfg.LOSS.PUSH_LOSS_FACTOR = (cfg.LOSS.PUSH_LOSS_FACTOR)
-
-    # if not isinstance(cfg.LOSS.PULL_LOSS_FACTOR, (list, tuple)):
-    #     cfg.LOSS.PULL_LOSS_FACTOR = (cfg.LOSS.PULL_LOSS_FACTOR)
+    ###############################################################
+    # DATASET_FVV
+    if cfg.DATASET_FVV.IMG_DIR[:2] == '_/':
+        cfg.DATASET_FVV.IMG_DIR = os.path.join(cfg.DATASET_FVV.ROOT, cfg.DATASET_FVV.IMG_DIR[2:])
+    if cfg.DATASET_FVV.CALIB_PATH[:2] == '_/':
+        cfg.DATASET_FVV.CALIB_PATH = os.path.join(cfg.DATASET_FVV.ROOT, cfg.DATASET_FVV.CALIB_PATH[2:])
+    if cfg.DATASET_FVV.MESH_DIR[:2] == '_/':
+        cfg.DATASET_FVV.MESH_DIR = os.path.join(cfg.DATASET_FVV.ROOT, cfg.DATASET_FVV.MESH_DIR[2:])
+    if cfg.DATASET_FVV.CALIB_PATH[:2] == '_/':
+        cfg.DATASET_FVV.CALIB_PATH = os.path.join(cfg.DATASET_FVV.ROOT, cfg.DATASET_FVV.CALIB_PATH[2:])      
+    cfg.DATASET_FVV.CAM_RANGE = set_range(cfg.DATASET_FVV.CAM_RANGE)
+    cfg.DATASET_FVV.FRAME_RANGE = set_range(cfg.DATASET_FVV.FRAME_RANGE)
 
     cfg.freeze()
 
-
 def check_config(cfg):
-    # assert cfg.LOSS.NUM_STAGES == len(cfg.LOSS.WITH_HEATMAPS_LOSS), \
-    #   'LOSS.NUM_SCALE should be the same as the length of LOSS.WITH_HEATMAPS_LOSS'
     pass
 
 def set_range(range_params):

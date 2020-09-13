@@ -34,6 +34,8 @@ def main():
 
     print("Setup Log ...")
     log_dir, iter_init, epoch_begin, checkpoint_path = create_logger(cfg, args.cfg)
+    save_img_dir = os.path.join(log_dir, 'images_trainning')
+    os.mkdir(save_img_dir)
     print(args)
     print(cfg)
     print("*" * 100)
@@ -42,7 +44,7 @@ def main():
     print(' Batch size: '+ str(cfg.TRAIN.BATCH_SIZE))
     # if not cfg.GPUS == 'None':        
     # os.environ["CUDA_VISIBLE_DEVICES"]=str(cfg.GPUS)[1:-1]
-    os.environ["CUDA_VISIBLE_DEVICES"]='2'
+    os.environ["CUDA_VISIBLE_DEVICES"]='1'
 
     # import pytorch after set cuda
     import torch
@@ -65,7 +67,8 @@ def main():
     # from utils.encoding import DataParallelCriterion
 
     from lib.dataset.DomeViewDataset import DomeViewDataset
-    from lib.dataset.DPViewDataset import DPViewDataset  
+    from lib.dataset.DomeViewDatasetFVV import DomeViewDatasetFVV
+    from lib.dataset.DPViewDataset import DPViewDataset
 
     from lib.utils.model import save_checkpoint
     # device = torch.device('cuda: 2'+ str(cfg.GPUS[-1]))
@@ -80,6 +83,7 @@ def main():
 
     print("Build dataloader ...")
     view_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg, isTrain=True)
+    viewFVV_dataset = eval(cfg.DATASET_FVV.DATASET)(cfg = cfg, isTrain=True)
     if cfg.TRAIN.VAL_FREQ > 0:
         print("Build val dataloader ...")
         view_val_dataset = eval(cfg.DATASET.DATASET)(cfg = cfg, isTrain=False)
@@ -111,10 +115,19 @@ def main():
     print('Start buffering data for training...')
     view_dataloader = DataLoader(view_dataset,
                                  batch_size = cfg.TRAIN.BATCH_SIZE * gpu_count, 
-                                #  shuffle = cfg.TRAIN.SHUFFLE, 
+                                 shuffle = cfg.TRAIN.SHUFFLE, 
                                  pin_memory=True,
-                                 num_workers = cfg.WORKERS,
-                                 sampler=DistributedSampler(view_dataset))
+                                 num_workers = cfg.WORKERS)
+    viewFVV_dataloader = DataLoader(viewFVV_dataset,
+                                 batch_size = cfg.TRAIN.BATCH_SIZE * gpu_count, 
+                                 shuffle = False, 
+                                 num_workers = 0)
+    # view_dataloader = DataLoader(view_dataset,
+    #                              batch_size = cfg.TRAIN.BATCH_SIZE * gpu_count, 
+    #                             #  shuffle = cfg.TRAIN.SHUFFLE, 
+    #                              pin_memory=True,
+    #                              num_workers = cfg.WORKERS,
+    #                              sampler=DistributedSampler(view_dataset))
     view_dataset.buffer_all()
     if cfg.TRAIN.VAL_FREQ > 0:
         print('Start buffering data for validation...')     
@@ -134,14 +147,15 @@ def main():
     iter = iter_init
     for epoch in range(epoch_begin, cfg.TRAIN.END_EPOCH + 1):
         model.update_learning_rate()
+        viewFVV_dataset.refresh()
 
-        for view_data in view_dataloader:
+        for view_data, viewFVV_data in zip(view_dataloader, viewFVV_dataloader):
             model.optimize_parameters(view_data)
 
             img_gt = view_data['img']
             alpha_map = view_data['mask'][:,None,:,:]
             uv_map = view_data['uv_map']
-            
+                       
             # chcek gradiant
             if iter == iter_init:
                 print('Checking gradiant in first iteration')
@@ -150,24 +164,32 @@ def main():
                         print(name, True if param.grad is not None else False)
 
             outputs = model_net.get_current_results()
+            loss_list = model_net.get_current_losses()
             outputs_img = outputs['rs'][:,0:3,:,:].clone().detach().cpu()
             outputs_mask = outputs['rs'][:,3:4,:,:].clone().detach().cpu()
             outputs_img *= outputs_mask
             outputs['img_rs'] = outputs_img
             outputs['mask_rs'] = outputs_mask
-            # neural_img = outputs['nimg_rs'].clone().detach().cpu()
+            # neural_img = outputs['nimg_rs'].clone().detach().cpu()            
             
             # Metrics
             log_time = datetime.datetime.now().strftime('%m/%d') + '_' + datetime.datetime.now().strftime('%H:%M:%S') 
             with torch.no_grad():
                 err_metrics_batch_i = metric.compute_err_metrics_batch(outputs_img * 255.0, img_gt * 255.0, alpha_map, compute_ssim = False)
 
-            # viso
+            # sythnesis views
+            model.optimize_parameters(viewFVV_data)
+            loss_list['G_views'] = float(model_net.loss_G_Multi)
+            outputs_views = model_net.get_current_results()
+            outputs_views_img = outputs_views['rs'][:,0:3,:,:].clone().detach().cpu()
+            outputs['nimg_rs_view'] = outputs_views_img
+            outputs['img_rs_view'] = outputs_views_img
+            outputs['uv_map_view'] = viewFVV_data['uv_map']
+            # vis
             if not iter % cfg.LOG.PRINT_FREQ:
-                vis.writer_add_image_gan(writer, iter, epoch, inputs=view_data, results=outputs)
+                vis.writer_add_image_gan(writer, iter, epoch, inputs=view_data, results=outputs, save_folder=save_img_dir)
 
             # Log
-            loss_list = model_net.get_current_losses()
             end = time.time()
             iter_time = end - start
             # vis.writer_add_scalar(writer, iter, epoch, err_metrics_batch_i, loss_list, log_time, iter_time)

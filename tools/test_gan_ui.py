@@ -19,8 +19,12 @@ class Args():
         self.cfg = cfg
         self.opts = opts
 
+# fashion video
+model_path = '/home/chenxin/relightable-nr/data/200909_fashion_small/logs/09-10_03-35-40_ganhd_mask/200909_GANHD_Contextual_mask.yaml'
+# model_path = '/home/chenxin/relightable-nr/data/200909_fashion_small/logs/09-10_06-18-35_ganhd_mask/200909_GANHD_Contextual_mask.yaml'
+
 # trump
-model_path = '/new_disk/chenxin/relightable-nr/data/200906_trump/logs/09-06_11-04-21_test_8_trump_from_internet/200903_GAN_APose.yaml'
+# model_path = '/new_disk/chenxin/relightable-nr/data/200906_trump/logs/09-06_11-04-21_test_8_trump_from_internet/200903_GAN_APose.yaml'
 
 # # sport short male running
 # model_path = '/new_disk/chenxin/relightable-nr/data/200903_justin/logs/09-03_16-02-04_cam_9views/200903_GAN_APose.yaml' 
@@ -63,7 +67,8 @@ def prepare_camera_transform(obj, Ts):
 
     center = torch.mean(in_points,dim=0).cpu()
     # up = -torch.mean(Ts[:,0:3,0],dim =0)
-    up = -torch.tensor([0.,0.,1.])
+    up = torch.tensor([0.,1.,0.])
+    # up = -torch.tensor([0.,0.,1.])
     # up = torch.tensor([0.,0.,1.])
     # up = torch.tensor([0.,1.,0.]) # dome camera
     # up = -Ts[0:3,0]
@@ -90,17 +95,19 @@ def prepare_camera_transform(obj, Ts):
     radius = radius.item()
     s_pos = s_pos.numpy()
 
-    global pos
+    global global_pos
     global xaxis
-    pos = s_pos
-    lookat = center - pos
+    global_pos = s_pos
+    lookat = center - global_pos
     dis=np.linalg.norm(lookat)/100
     lookat = lookat/np.linalg.norm(lookat)
     xaxis = np.cross(lookat, up)
     xaxis = xaxis / np.linalg.norm(xaxis)
 
     cam_data = {}
-    cam_data['center'] = center
+    global global_center
+    global_center = center
+    cam_data['center'] = global_center
     cam_data['up'] = up
     cam_data['dis'] = dis
     return cam_data
@@ -108,13 +115,17 @@ def prepare_camera_transform(obj, Ts):
 def control_cam(data):
     op=data['op']    
     global control_speed
+    global is_move
     global is_rotate
     if op[0] == 9:
-        is_rotate = not is_rotate   
+        is_rotate = not is_rotate
     elif op[0] == 10:
         control_speed = control_speed+1
     elif op[0] == 11:
         control_speed = control_speed-1
+    elif op[0] == 12:
+        tmp = is_move 
+        is_move = not tmp
 
     if is_rotate:
         op[0] = 1 
@@ -122,39 +133,58 @@ def control_cam(data):
 
 def calculate_cam_pose(data, cam_data):
     global control_speed
-    global pos
+    global global_pos
+    global global_center
     global xaxis
 
-    center = cam_data['center']
+    # global_center = cam_data['center']
     up = cam_data['up']
     dis = cam_data['dis']*2**control_speed
     
     # calculate cam
     op=data['op']
-    angle = 3.1415926*2/360.0*2**control_speed
+    angle = 3.1415926*2/360.0*(2**control_speed)
     
-    pos = pos - center
-    if op[0]==1:
-        print('LeftLook')
-        pos = rodrigues_rotation_matrix(up,-angle).dot(pos) 
-    elif op[0]==2:
-        print('RightLook')
-        pos = rodrigues_rotation_matrix(up,angle).dot(pos) 
-    elif op[0]==3:
-        print('UpLook')
-        pos = rodrigues_rotation_matrix(xaxis,-angle).dot(pos) 
-    elif op[0]==4:
-        print('DownLook')
-        pos = rodrigues_rotation_matrix(xaxis,angle).dot(pos) 
-    elif op[0]==5:
+    global_pos = global_pos - global_center
+
+    global is_move
+    if not is_move:
+        if op[0]==1:
+            print('LeftLook')
+            global_pos = rodrigues_rotation_matrix(up,-angle).dot(global_pos) 
+        elif op[0]==2:
+            print('RightLook')
+            global_pos = rodrigues_rotation_matrix(up,angle).dot(global_pos) 
+        elif op[0]==3:
+            print('UpLook')
+            global_pos = rodrigues_rotation_matrix(xaxis,-angle).dot(global_pos) 
+        elif op[0]==4:
+            print('DownLook')
+            global_pos = rodrigues_rotation_matrix(xaxis,angle).dot(global_pos) 
+    else:
+        move_step = 0.05
+        if op[0]==1:
+            print('LeftLook')
+            global_center = global_center + move_step*xaxis
+        elif op[0]==2:
+            print('RightLook')
+            global_center = global_center - move_step*xaxis
+        elif op[0]==3:
+            print('UpLook')
+            global_center = global_center - move_step*up
+        elif op[0]==4:
+            print('DownLook')
+            global_center = global_center + move_step*up
+
+    if op[0]==5:
         print('ZoomIn')
-        pos = pos-dis*pos/np.linalg.norm(pos)
+        global_pos = global_pos-dis*global_pos/np.linalg.norm(global_pos)
     elif op[0]==6:
         print('ZoomOut')
-        pos = pos+dis*pos/np.linalg.norm(pos)
-    pos = pos + center
+        global_pos = global_pos+dis*global_pos/np.linalg.norm(global_pos)
+    global_pos = global_pos + global_center
         
-    lookat = center - pos
+    lookat = global_center - global_pos
     lookat = lookat/np.linalg.norm(lookat)
     
     # yaxis = -np.cross(lookat, up)
@@ -169,7 +199,7 @@ def calculate_cam_pose(data, cam_data):
     yaxis = -np.cross(xaxis,lookat)
     yaxis = yaxis/np.linalg.norm(yaxis)
     
-    nR = np.array([xaxis,yaxis,lookat, pos]).T
+    nR = np.array([xaxis,yaxis,lookat, global_pos]).T
     nR = np.concatenate([nR,np.array([[0,0,0,1]])])
     
     T = torch.Tensor(nR)
@@ -205,11 +235,15 @@ Ts = np.dot(Ts, view_dataset.global_RT_inv)
 cam_data = prepare_camera_transform(obj, Ts)
 
 # prepare interaction
+global is_move
+is_move = False
 global is_rotate
 is_rotate = False
 global control_speed
-control_speed = 1.0
+control_speed = 0.0
 
+global rotate_count
+rotate_count = 0
 @app.route('/', methods = ["GET","POST"])
 def hello_world():
     t_start_all = time.time()
@@ -229,6 +263,19 @@ def hello_world():
     global_view_data['f_idx'] = calculate_frame(data, global_view_data['f_idx'], view_dataset.frame_range)    
     global_view_data = view_dataset.read_view_from_cam(global_view_data, T)
 
+    # build calib
+    global is_rotate
+    global rotate_count
+    if is_rotate:
+        view_dataset.calib['poses'][rotate_count, ...] = global_view_data['pose'][0, ...].clone().detach().cpu().numpy()
+        view_dataset.calib['projs'][rotate_count, ...] = view_dataset.calib['projs'][0, ...]
+        view_dataset.calib['dist_coeffs'][rotate_count, ...] = view_dataset.calib['dist_coeffs'][0, ...]
+        rotate_count += 1
+        if rotate_count == 360:
+            import scipy
+            scipy.io.savemat('/home/chenxin/relightable-nr/data/200909_fashion_small/calib/calib_0911_rendered360.mat', view_dataset.calib)
+
+
     # inference
     model.set_input(global_view_data)
 
@@ -241,7 +288,7 @@ def hello_world():
 
     outputs = model.get_current_results()
 
-    outputs_img = outputs['img_rs']
+    outputs_img = outputs['rs'][:,0:3,:,:]
     neural_img = outputs['nimg_rs']
     # uv_map = global_view_data['uv_map']
 
@@ -272,4 +319,5 @@ def hello_world():
     return im_data
 
 if __name__ == '__main__':
-    app.run(debug=False, threaded=True, host='0.0.0.0',port=900)
+    app.run(debug=False, threaded=True, host='0.0.0.0',port=8030)
+    

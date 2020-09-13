@@ -76,12 +76,20 @@ class Pix2PixModel(torch.nn.Module):
         self.real_ATex = input['tex_ref'].to(self.device)
 
         if self.isTrain:
-            real_BMask = input['mask'].to(self.device)[:,None,:,:].to(self.device)
-            real_BImg = input['img'].to(self.device) * real_BMask
-            self.real_B = torch.cat((real_BImg, real_BMask), 1)
-            self.real_BTex = input['tex_tar'].to(self.device)
+            self.data_type = input['data_type'][0]
             self.real_A_UV = input['uv_map_ref'].to(self.device).permute(0,3,1,2)
             self.real_B_UV = input['uv_map'].to(self.device).permute(0,3,1,2)
+            if self.data_type == 'viewed':
+                real_BMask = input['mask'].to(self.device)[:,None,:,:].to(self.device)
+                real_BImg = input['img'].to(self.device) * real_BMask
+                self.real_B = torch.cat((real_BImg, real_BMask), 1)
+                self.real_BTex = input['tex_tar'].to(self.device)
+            elif self.data_type == 'rendered':
+                self.real_B = self.real_A.clone().detach()
+                self.real_BTex = self.real_ATex.clone().detach()
+            else:
+                raise ValueError('Not support data type')
+            # to-do-0910 how to handle realB and realBMask RealBTex
         
     def devices(self):
         devices = ({param.device for param in self.parameters()} |
@@ -115,6 +123,7 @@ class Pix2PixModel(torch.nn.Module):
         pred_fake = self.netD(fake_AB.detach())
         self.loss_D_fake = self.criterionGAN(pred_fake, False)
         # Real
+        # to-do-0910 handle rendered view for augmented realB
         real_AB = torch.cat((self.real_A_UV, self.real_A, self.real_B_UV, self.real_B), 1)
         pred_real = self.netD(real_AB)
         self.loss_D_real = self.criterionGAN(pred_real, True)
@@ -130,7 +139,7 @@ class Pix2PixModel(torch.nn.Module):
         self.loss_G_GAN = self.criterionGAN(pred_fake, True)
         # Second, G(A) = B
         ##################################################################
-        gt_set = {'gt':self.real_B, 'tex':self.real_BTex, 'tex_ref':self.real_ATex}
+        gt_set = {'gt':self.real_B, 'tex':self.real_BTex, 'tex_ref':self.real_ATex, 'data_type':self.data_type}
         self.loss_G_Multi = self.criterionMulti(self.fake_out, gt_set)
         # for vis
         self.loss_G_per = self.criterionMulti.loss_rgb
@@ -140,31 +149,27 @@ class Pix2PixModel(torch.nn.Module):
         ##################################################################
         # combine loss and calculate gradients
         self.loss_G = self.loss_G_GAN + self.loss_G_Multi * self.lambda_L1
-        self.loss_G.backward()
+        self.loss_G.backward(retain_graph=True)
 
     def optimize_parameters(self, view_data):
         self.set_input(view_data)
 
-        # with torch.autograd.set_detect_anomaly(True):
-        self.forward(view_data)          # compute fake images: G(A)
-        # update D
-        self.set_requires_grad(self.netD, True)  # enable backprop for D
-        self.optimizer_D.zero_grad()     # set D's gradients to zero
-        self.backward_D()                # calculate gradients for D
-        self.optimizer_D.step()          # update D's weights
-        # update G
-        self.set_requires_grad(self.netD, False)  # D requires no gradients when optimizing G
-        self.optimizer_G.zero_grad()        # set G's gradients to zero
-        self.backward_G()                   # calculate graidents for G
-        self.optimizer_G.step()             # udpate G's weights        
+        with torch.autograd.set_detect_anomaly(True):
+            self.forward(view_data)          # compute fake images: G(A)
+            # update D
+            self.set_requires_grad(self.netD, True)  # enable backprop for D
+            self.optimizer_D.zero_grad()     # set D's gradients to zero
+            self.backward_D()                # calculate gradients for D
+            self.optimizer_D.step()          # update D's weights
+            # update G
+            self.set_requires_grad(self.netD, False)  # D requires no gradients when optimizing G
+            self.optimizer_G.zero_grad()        # set G's gradients to zero
+            self.backward_G()                   # calculate graidents for G
+            self.optimizer_G.step()             # udpate G's weights        
 
     def setup(self, cfg):
         if self.isTrain:
             self.schedulers = [network.get_scheduler(optimizer, cfg) for optimizer in self.optimizers]
-        # to-do 0821
-        # if not self.isTrain or cfg.continue_train:
-        #     load_suffix = 'iter_%d' % opt.load_iter if opt.load_iter > 0 else opt.epoch
-        #     self.load_networks(load_suffix)
         if self.isTrain:
             self.print_networks(cfg.VERBOSE)
 

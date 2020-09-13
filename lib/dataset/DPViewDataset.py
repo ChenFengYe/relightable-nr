@@ -28,11 +28,11 @@ class DPViewDataset():
         self.isTrain = isTrain
         self.is_pairwise = cfg.TRAIN.SAMPLING_PAIRWISE
 
-        if self.isTrain:
-            self.img_dir = os.path.join(self.root_dir, 'img')
-            self.uvmap_dir = os.path.join(self.root_dir, 'uv')
-            self.mask_dir = os.path.join(self.root_dir, 'mask')
+        self.img_dir = os.path.join(self.root_dir, 'img')
+        self.uvmap_dir = os.path.join(self.root_dir, 'uv')
+        self.mask_dir = os.path.join(self.root_dir, 'mask')
 
+        if self.isTrain:
             if not os.path.isdir(self.root_dir):
                 raise ValueError("Error! root dir is wrong")
             if not os.path.isdir(self.img_dir):
@@ -43,8 +43,6 @@ class DPViewDataset():
                 raise ValueError("Error! mask dir is wrong")
     
             self.frame_range = cfg.DATASET.FRAME_RANGE
-
-            # get frames
             self.img_names = []
             # load with frame_range or all
             if len(self.frame_range):
@@ -68,10 +66,6 @@ class DPViewDataset():
         else:
             self.frame_range = cfg.TEST.FRAME_RANGE
 
-            self.img_dir = os.path.join(self.root_dir, 'img')
-            self.uvmap_dir = os.path.join(self.root_dir, 'uv')
-            self.mask_dir = os.path.join(self.root_dir, 'mask')
-            
             if not os.path.isdir(self.uvmap_dir):
                 raise ValueError("Error! uvmap dir is wrong")
             self.img_names = []
@@ -228,11 +222,14 @@ class DPViewDataset():
         uvmap[uvmap >= 1] = 0
         uvmap[uvmap < 0] = 0
         uvmap = uvmap.permute(1,2,0)
-
+    
+        # if self.cfg.DATASET.GEN_TEX:
+        tex = self.load_tex(img_name, img, uvmap, save_cal=True)
+        
         if mask is not None:
             mask[mask > 0] = 1
             mask = mask[0, ...]
-        return {'img': img, 'uv_map': uvmap, 'mask': mask}
+        return {'img': img, 'uv_map': uvmap, 'mask': mask, 'tex': tex}
 
     def load_tex(self, img_name, img, uv_map, save_cal=True, overwrite=False):
         img_key = os.path.splitext(img_name)[0]
@@ -273,13 +270,11 @@ class DPViewDataset():
 
                 view_ref_data = self.load_view(img_name_ref)
                     
-                # if self.cfg.DATASET.GEN_TEX:
-                tex_ref = self.load_tex(img_name_ref, view_ref_data['img'], view_ref_data['uv_map'], save_cal=True)
-                tex_tar = self.load_tex(img_name, view_data['img'], view_data['uv_map'], save_cal=True)
-
-                return {'img': view_data['img'],'uv_map': view_data['uv_map'],'mask': view_data['mask'],
+                view_pair_data ={'img': view_data['img'],'uv_map': view_data['uv_map'],'mask': view_data['mask'],
                         'img_ref': view_ref_data['img'],'uv_map_ref': view_ref_data['uv_map'],'mask_ref': view_ref_data['mask'],
-                        'tex_ref': tex_ref, 'tex_tar': tex_tar}
+                        'tex_ref': view_ref_data['tex'], 'tex_tar': view_data['tex']}
+                view_pair_data['data_type'] = 'viewed'
+                return view_pair_data
         else:
             img_name = self.img_names[idx]
             view_data = self.load_view(img_name)
@@ -290,12 +285,9 @@ class DPViewDataset():
             img_name_ref = '080_017.png'
             view_ref_data = self.load_view(img_name_ref, img_dir, uvmap_dir, mask_dir)
 
-            if self.cfg.DATASET.GEN_TEX:
-                tex = self.load_tex(img_name_ref, view_ref_data['img'], view_ref_data['uv_map'], save_cal=True)
-
             return {'uv_map': view_data['uv_map'],
                     'img_ref': view_ref_data['img'],'uv_map_ref': view_ref_data['uv_map'],'mask_ref': view_ref_data['mask'],
-                    'tex_ref': tex}
+                    'tex_ref': view_ref_data['tex']}
 
     def buffer_all(self):
         pass

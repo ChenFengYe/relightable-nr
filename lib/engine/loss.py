@@ -36,6 +36,7 @@ class MultiLoss(nn.Module):
         self.w_atlas_ref = cfg.LOSS.WEIGHT_ATLAS_REF
         self.w_atlas_unity = cfg.LOSS.WEIGHT_ATLAS_UNIFY
         self.w_hsv = cfg.LOSS.WEIGHT_HSV                        
+        self.w_views = cfg.LOSS.WEIGHT_VIEWS
 
         # loss
         self.loss = torch.tensor([0.0])
@@ -67,26 +68,39 @@ class MultiLoss(nn.Module):
 
 
     def forward(self, input, target):                
-        rs = input['rs']
-        gt = target['gt']
-        mask_gt = gt[:,3:4,:,:].clone().repeat(1,3,1,1)
-        rs[:,0:3,:,:] = rs[:,0:3,:,:].clone() * mask_gt
-        gt[:,0:3,:,:] = gt[:,0:3,:,:].clone() * mask_gt
+        # to-do-0910 set loss for rendered view
+        data_type = target['data_type']
+        if data_type == 'viewed':
+            rs = input['rs']
+            gt = target['gt']
+            mask_gt = gt[:,3:4,:,:].clone().repeat(1,3,1,1)
+            rs[:,0:3,:,:] = rs[:,0:3,:,:].clone() * mask_gt
+            gt[:,0:3,:,:] = gt[:,0:3,:,:].clone() * mask_gt
 
-        # loss 1 persepetual
-        self.loss_rgb = self.w_per * self.Perceptual_L1(rs, gt)
+            # loss 1 persepetual
+            self.loss_rgb = self.w_per * self.Perceptual_L1(rs, gt)
 
-        # loss hsv
-        # self.loss_hsv = self.w_hsv * self.HSV_L1(img_rs, target)         
+            # loss hsv
+            # self.loss_hsv = self.w_hsv * self.HSV_L1(img_rs, target)         
 
-        # all
-        self.loss_atlas = self.w_atlas * self.AtlasLoss(input, target)
+            # all
+            self.loss_atlas = self.w_atlas * self.AtlasLoss(input, target)
 
-        self.loss_atlas_ref = self.AtlasLoss.loss_atlas_ref
-        self.loss_atlas_tar = self.AtlasLoss.loss_atlas_tar
-        self.loss_atlas_unify = self.AtlasLoss.loss_atlas_unify
+            # summary
+            self.loss_atlas_ref = self.AtlasLoss.loss_atlas_ref
+            self.loss_atlas_tar = self.AtlasLoss.loss_atlas_tar
+            self.loss_atlas_unify = self.AtlasLoss.loss_atlas_unify
+            self.loss = self.loss_rgb + self.loss_atlas
 
-        self.loss = self.loss_rgb + self.loss_atlas
+        elif data_type == 'rendered':
+            batch_size = input['rs'].shape[0]
+            idxs_ref = list(range(0, batch_size))
+            idxs_ref.insert(0, idxs_ref.pop())  # shift 1 element
+
+            rs = input['rs']            
+            self.loss_views = F.l1_loss(rs, rs[idxs_ref,...].clone().detach()) + F.l1_loss(rs[idxs_ref,...], rs.clone().detach())
+            self.loss_views = self.w_views * self.loss_views
+
         return self.loss
     
     # def loss_list(self): 

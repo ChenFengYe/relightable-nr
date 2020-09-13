@@ -22,30 +22,30 @@ class DomeViewDataset(DPViewDataset):
                  isTrain = True):
         # super().__init__()
 
-        root_dir = cfg.DATASET.ROOT
-        calib_path = cfg.DATASET.CALIB_PATH
-        calib_format = cfg.DATASET.CALIB_FORMAT
+        root_dir = cfg.DATASET_FVV.ROOT
+        calib_path = cfg.DATASET_FVV.CALIB_PATH
+        calib_format = cfg.DATASET_FVV.CALIB_FORMAT
         sampling_pattern = cfg.TRAIN.SAMPLING_PATTERN if isTrain else cfg.TEST.SAMPLING_PATTERN
-        precomp_high_dir = cfg.DATASET.PRECOMP_DIR
-        precomp_low_dir = cfg.DATASET.PRECOMP_DIR
-        preset_uv_path = cfg.DATASET.UV_PATH
+        # precomp_high_dir = cfg.DATASET_FVV.PRECOMP_DIR
+        # precomp_low_dir = cfg.DATASET_FVV.PRECOMP_DIR
+        preset_uv_path = cfg.DATASET_FVV.UV_PATH
         ignore_dist_coeffs = True
         
         self.cfg = cfg
         self.root_dir = root_dir
         self.calib_format = calib_format
-        self.img_dir = cfg.DATASET.IMG_DIR
-        self.img_size = list(cfg.DATASET.OUTPUT_SIZE)
+        self.img_dir = cfg.DATASET_FVV.IMG_DIR
+        self.img_size = list(cfg.DATASET_FVV.OUTPUT_SIZE)
         self.ignore_dist_coeffs = ignore_dist_coeffs
         self.is_train = isTrain
 
         self.preset_uv_path = preset_uv_path
-        self.precomp_high_dir = precomp_high_dir
-        self.precomp_low_dir = precomp_low_dir
+        # self.precomp_high_dir = precomp_high_dir
+        # self.precomp_low_dir = precomp_low_dir
 
-        self.img_gamma = cfg.DATASET.GAMMA        
-        self.frame_range = cfg.DATASET.FRAME_RANGE if isTrain else cfg.TEST.FRAME_RANGE
-        self.cam_range = cfg.DATASET.CAM_RANGE
+        # self.img_gamma = cfg.DATASET_FVV.GAMMA        
+        self.frame_range = cfg.DATASET_FVV.FRAME_RANGE if isTrain else cfg.TEST.FRAME_RANGE
+        self.cam_range = cfg.DATASET_FVV.CAM_RANGE
         self.cam_idxs = []
         self.frame_idxs = []
         self.frame_num = len(self.cam_range) & len(self.frame_range)
@@ -81,7 +81,7 @@ class DomeViewDataset(DPViewDataset):
                         img_path = self.img_dir % (frame_idx, cam_idx)
                     else:
                         raise ValueError('Error : image pattern ' + self.img_dir + ' is not support!')
-                    obj_path = cfg.DATASET.MESH_DIR %(frame_idx)
+                    obj_path = cfg.DATASET_FVV.MESH_DIR %(frame_idx)
                     if not os.path.isfile(img_path):
                         raise ValueError('Not existed image path : ' + img_path)
                     if not os.path.isfile(obj_path):
@@ -95,7 +95,7 @@ class DomeViewDataset(DPViewDataset):
             self.img_fp_all = ['x.x'] * self.num_view
             self.cam_idxs = range(0,self.num_view)
             self.frame_idxs = np.resize(cfg.TEST.FRAME_RANGE, self.num_view)
-            self.obj_fp_all = [cfg.DATASET.MESH_DIR%(frame_idx) for frame_idx in self.frame_idxs]
+            self.obj_fp_all = [cfg.DATASET_FVV.MESH_DIR%(frame_idx) for frame_idx in self.frame_idxs]
 
         # get intrinsic/extrinsic of all input images
         self.num_view = len(self.calib['poses'])
@@ -113,6 +113,9 @@ class DomeViewDataset(DPViewDataset):
         self.img_fp_all, self.poses_all, self.keep_idxs = samping_img_set(self.img_fp_all, self.poses_all, sampling_pattern)
         self.cam_idxs = np.array(self.cam_idxs)
         
+        # set dataset range
+        self.view_range = list(range(0,len(self.img_fp_all)))
+
         if self.calib_format == 'convert':
             #cam_idx = self.keep_idxs % self.num_view            
             cam_idxs = self.cam_idxs[self.keep_idxs]
@@ -133,22 +136,22 @@ class DomeViewDataset(DPViewDataset):
         print("Image size ", self.img_size)
 
         print(" Building transform for images...")
-        self.transform = RandomTransform(cfg.DATASET.OUTPUT_SIZE, 
-                                    cfg.DATASET.MAX_SHIFT, 
-                                    cfg.DATASET.MAX_SCALE,
-                                    cfg.DATASET.MAX_ROTATION)
+        self.transform = RandomTransform(cfg.DATASET_FVV.OUTPUT_SIZE, 
+                                    cfg.DATASET_FVV.MAX_SHIFT, 
+                                    cfg.DATASET_FVV.MAX_SCALE,
+                                    cfg.DATASET_FVV.MAX_ROTATION)
         
         # build raster
-        uv_template_path = self.cfg.DATASET.UV_PATH
+        uv_template_path = self.cfg.DATASET_FVV.UV_PATH
         self.init_rasterizer(uv_template_path, self.global_RT)
 
         # build uv converter
-        self.uv_converter = UVConverter(cfg.DATASET.UV_CONVERTER)
+        self.uv_converter = UVConverter(cfg.DATASET_FVV.UV_CONVERTER)
 
-        if cfg.DATASET.GEN_TEX: # to-do generate tex 
-            from lib.models import network
-            self.texture_creater = network.TextureCreater(texture_size = cfg.MODEL.TEX_CREATER.NUM_SIZE,
-                                                    texture_num_ch = cfg.MODEL.TEX_CREATER.NUM_CHANNELS)       
+        # if cfg.DATASET_FVV.GEN_TEX: # to-do generate tex 
+        #     from lib.models import network
+        #     self.texture_creater = network.TextureCreater(texture_size = cfg.MODEL.TEX_CREATER.NUM_SIZE,
+        #                                             texture_num_ch = cfg.MODEL.TEX_CREATER.NUM_CHANNELS)       
 
         if cfg.VERBOSE:
             print("image names", self.img_fp_all[:100], 
@@ -164,21 +167,21 @@ class DomeViewDataset(DPViewDataset):
         # if preset_uv_path:
         #    self.v_attr, self.f_attr = nr.load_obj(cur_obj_fp, normalization = False)
 
-        if self.cfg.DATASET.PRELOAD_MESHS:
+        if self.cfg.DATASET_FVV.PRELOAD_MESHS:
             print(" Buffering meshs...")
             self.objs = {}            
             for keep_idx in self.keep_idxs:
                 frame_idx = self.frame_idxs[keep_idx]
                 if frame_idx in self.objs:
                     continue
-                cur_obj_fp = self.cfg.DATASET.MESH_DIR%(frame_idx)
+                cur_obj_fp = self.cfg.DATASET_FVV.MESH_DIR%(frame_idx)
                 obj_data = {}
                 obj_data['v_attr'] , obj_data['f_attr'] = nr.load_obj(cur_obj_fp, normalization = False, use_cuda = False)
                 self.objs[frame_idx] = obj_data
                 if self.cfg.VERBOSE:
                     print(' Loading mesh: ' + str(int(frame_idx)) + ' ' + cur_obj_fp)
 
-        if self.cfg.DATASET.PRELOAD_VIEWS:
+        if self.cfg.DATASET_FVV.PRELOAD_VIEWS:
             # Buffer files
             print("Buffering files...")
             self.views_all = []
@@ -198,15 +201,20 @@ class DomeViewDataset(DPViewDataset):
         img_fn = os.path.split(img_fp)[-1]
     
         # image size
+        idx_calib = 1
         if self.calib_format == 'convert':
-            img_hw = self.calib['img_hws'][idx, :]
+            img_hw = self.calib['img_hws'][idx_calib, :]
 
         # extrinsic
-        pose = self.poses_all[idx]
-        pose = np.dot(pose, self.global_RT_inv)
+        # pose = self.poses_all[idx]
+        # pose = np.dot(pose, self.global_RT_inv)
+        pose = self.calib['poses'][idx, :]
 
         # intrinsic
-        proj = self.calib['projs'][idx, ...]
+        proj = self.calib['projs'][idx_calib, ...]
+
+        dist_coeffs = self.calib['dist_coeffs'][idx_calib, :]
+        dist_coeffs = dist_coeffs if not self.ignore_dist_coeffs else np.zeros(dist_coeffs.shape)
 
         # get view image
         if self.is_train:
@@ -236,12 +244,10 @@ class DomeViewDataset(DPViewDataset):
             proj[1, -1] = (proj[1, -1] + offset[0]) * scale[0]
             proj[0, 0] *= scale[1]
             proj[1, 1] *= scale[0]
+            pass
 
 
-        dist_coeffs = self.calib['dist_coeffs'][idx, :]
-        dist_coeffs = dist_coeffs if not self.ignore_dist_coeffs else np.zeros(dist_coeffs.shape)
-
-        view_dir = -pose[2, :3]
+        # view_dir = -pose[2, :3]
         proj_inv = numpy.linalg.inv(proj)
         R_inv = pose[:3, :3].transpose()
 
@@ -265,7 +271,7 @@ class DomeViewDataset(DPViewDataset):
                 view['ROI'] = ROI
 
             # load precomputed data
-            # if self.cfg.DATASET.LOAD_PRECOMPUTE:
+            # if self.cfg.DATASET_FVV.LOAD_PRECOMPUTE:
             #     precomp_low_dir = self.precomp_low_dir % frame_idx
             #     precomp_high_dir = self.precomp_high_dir % frame_idx
 
@@ -329,7 +335,7 @@ class DomeViewDataset(DPViewDataset):
         obj_data['v_attr'] , obj_data['f_attr'] = nr.load_obj(obj_path, normalization = False, use_cuda = False)        
         self.rasterizer = network.Rasterizer(self.cfg,
                             obj_data = obj_data,
-                            # preset_uv_path = cfg.DATASET.UV_PATH,
+                            # preset_uv_path = cfg.DATASET_FVV.UV_PATH,
                             global_RT = global_RT)
         self.rasterizer.cuda()
 
@@ -372,7 +378,7 @@ class DomeViewDataset(DPViewDataset):
     def read_view_from_cam(self, view_trgt, pose):
         isBatch = True
         view_trgt['pose'] = pose[None, ...]
-        view_trgt['obj_path'] = [self.cfg.DATASET.MESH_DIR %(view_trgt['f_idx'].item())]
+        view_trgt['obj_path'] = [self.cfg.DATASET_FVV.MESH_DIR %(view_trgt['f_idx'].item())]
         uv_map, alpha_map = self.project_with_rasterizer(view_trgt, isBatch)
         view_trgt['uv_map'] = uv_map[None,...]
         view_trgt['alpha_map'] = alpha_map[None,...]
@@ -381,43 +387,51 @@ class DomeViewDataset(DPViewDataset):
     def __len__(self):
         return len(self.img_fp_all)
 
-    def __getitem__(self, idx):
-        # to-do fix first frame error
-        if len(self.views_all) > idx:
-            view_trgt = self.views_all[idx]
-        else:
-            view_trgt = self.read_view(idx)
+    def get_item(self, idx):
+        idx = self.view_range[idx]
+        print(idx)
+        # # to-do fix first frame error
+        # if len(self.views_all) > idx:
+        #     view_trgt = self.views_all[idx]
+        # else:
+        view_trgt = self.read_view(idx)
 
         # generate project uv
         uv_map, alpha_map = self.project_with_rasterizer(view_trgt)
         view_trgt['uv_map'] = uv_map
         view_trgt['mask'] = alpha_map
 
-        # generate refered tex
-        # img_dir='./data/densepose_cx/img'
-        # uvmap_dir='./data/densepose_cx/uv'
-        # mask_dir='./data/densepose_cx/mask'
-        # img_name_ref = '020_017.png'
+        # # to-do-0910 delete referred image  move it to domeviewdatasetfvv
+        #     # generate refered tex
+        #     # img_dir='./data/densepose_cx/img'
+        #     # uvmap_dir='./data/densepose_cx/uv'
+        #     # mask_dir='./data/densepose_cx/mask'
+        #     # img_name_ref = '020_017.png'
 
-        # img_dir='./data/200830_hnrd_SDAP_30714418105/img'
-        # uvmap_dir='./data/200830_hnrd_SDAP_30714418105/uv'
-        # mask_dir='./data/200830_hnrd_SDAP_30714418105/mask'
-        # img_name_ref = 'SDAP_30714418105_38_00000.jpg'
+        #     # img_dir='./data/200830_hnrd_SDAP_30714418105/img'
+        #     # uvmap_dir='./data/200830_hnrd_SDAP_30714418105/uv'
+        #     # mask_dir='./data/200830_hnrd_SDAP_30714418105/mask'
+        #     # img_name_ref = 'SDAP_30714418105_38_00000.jpg'
 
-        # img_dir='./data/200830_hnrd_SDAP_14442478293/img'
-        # uvmap_dir='./data/200830_hnrd_SDAP_14442478293/uv'
-        # mask_dir='./data/200830_hnrd_SDAP_14442478293/mask'
-        # img_name_ref = 'SDAP_14442478293_35_00000.jpg'
+        #     # img_dir='./data/200830_hnrd_SDAP_14442478293/img'
+        #     # uvmap_dir='./data/200830_hnrd_SDAP_14442478293/uv'
+        #     # mask_dir='./data/200830_hnrd_SDAP_14442478293/mask'
+        #     # img_name_ref = 'SDAP_14442478293_35_00000.jpg'
 
-        img_dir='./data/200903_justin/img'
-        uvmap_dir='./data/200903_justin/uv'
-        mask_dir='./data/200903_justin/mask'
-        img_name_ref = 'view_1.jpg'
+        # img_dir='./data/200909_fashion_small/img'
+        # uvmap_dir='./data/200909_fashion_small/uv'
+        # mask_dir='./data/200909_fashion_small/mask'
+        # img_name_ref = 's02_view_01.png'
 
-        view_ref_data = self.load_view(img_name_ref, img_dir, uvmap_dir, mask_dir)
-        tex_ref = self.load_tex(img_name_ref, view_ref_data['img'], view_ref_data['uv_map'], save_cal=True)
-        view_trgt['img_ref'] = view_ref_data['img']
-        view_trgt['uv_map_ref'] = view_ref_data['uv_map']
-        view_trgt['tex_ref'] = tex_ref
+        # view_ref_data = self.load_view(img_name_ref, img_dir, uvmap_dir, mask_dir)
+        # view_trgt['img_ref'] = view_ref_data['img']
+        # view_trgt['uv_map_ref'] = view_ref_data['uv_map']
+        # view_trgt['mask_ref'] = view_ref_data['mask']
+        # view_trgt['tex_ref'] = view_ref_data['tex']
+        return view_trgt
+
+    def __getitem__(self, idx):
+        view_trgt = self.get_item(idx)
         return view_trgt    
+    
     

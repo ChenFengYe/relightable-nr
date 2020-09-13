@@ -64,10 +64,12 @@ def build_model(args):
     from utils.encoding import DataParallelModel
 
     from lib.dataset.DomeViewDataset import DomeViewDataset
+    from lib.dataset.DomeViewDatasetFVV import DomeViewDatasetFVV
     from lib.dataset.DPViewDataset import DPViewDataset  
 
     print("Build dataloader ...")
-    view_dataset = eval(cfg.DATASET.DATASET)(cfg, isTrain=False)
+    view_dataset = DomeViewDatasetFVV(cfg, isTrain=False)
+    # view_dataset = eval(cfg.DATASET.DATASET)(cfg, isTrain=False)
     print("*" * 100)
 
     print('Build Network...')
