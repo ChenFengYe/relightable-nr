@@ -99,18 +99,18 @@ class DomeViewDataset(DPViewDataset):
 
         # get intrinsic/extrinsic of all input images
         self.num_view = len(self.calib['poses'])
-        self.poses_all = []
+        # self.poses_all = []
         img_fp_all_new = []
         for idx in range(len(self.img_fp_all)):
             img_fn = os.path.split(self.img_fp_all[idx])[-1]
-            self.poses_all.append(self.calib['poses'][self.cam_idxs[idx], :, :])
+            # self.poses_all.append(self.calib['poses'][self.cam_idxs[idx], :, :])
             img_fp_all_new.append(self.img_fp_all[idx])
 
         # remove views without calibration result
         self.img_fp_all = img_fp_all_new
 
         # subsample data
-        self.img_fp_all, self.poses_all, self.keep_idxs = samping_img_set(self.img_fp_all, self.poses_all, sampling_pattern)
+        self.img_fp_all, self.keep_idxs = samping_img_set(self.img_fp_all, sampling_pattern)
         self.cam_idxs = np.array(self.cam_idxs)
         
         # set dataset range
@@ -201,9 +201,8 @@ class DomeViewDataset(DPViewDataset):
         img_fn = os.path.split(img_fp)[-1]
     
         # image size
-        idx_calib = 1
         if self.calib_format == 'convert':
-            img_hw = self.calib['img_hws'][idx_calib, :]
+            img_hw = self.calib['img_hws'][idx, :]
 
         # extrinsic
         # pose = self.poses_all[idx]
@@ -211,9 +210,8 @@ class DomeViewDataset(DPViewDataset):
         pose = self.calib['poses'][idx, :]
 
         # intrinsic
-        proj = self.calib['projs'][idx_calib, ...]
-
-        dist_coeffs = self.calib['dist_coeffs'][idx_calib, :]
+        proj = self.calib['projs'][idx, ...]
+        dist_coeffs = self.calib['dist_coeffs'][idx, :]
         dist_coeffs = dist_coeffs if not self.ignore_dist_coeffs else np.zeros(dist_coeffs.shape)
 
         # get view image
@@ -389,11 +387,6 @@ class DomeViewDataset(DPViewDataset):
 
     def get_item(self, idx):
         idx = self.view_range[idx]
-        print(idx)
-        # # to-do fix first frame error
-        # if len(self.views_all) > idx:
-        #     view_trgt = self.views_all[idx]
-        # else:
         view_trgt = self.read_view(idx)
 
         # generate project uv

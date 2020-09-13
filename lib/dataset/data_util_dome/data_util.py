@@ -7,61 +7,49 @@ import math
 from scipy.linalg import logm, norm
 import scipy.io
 
-def samping_img_set(img_fp_all, poses_all, sampling_pattern):
+def samping_img_set(img_fp_all, sampling_pattern):
     keep_idxs = []
     if sampling_pattern == 'all':
         keep_idxs = list(range(len(img_fp_all)))
     else:
         # if sampling_pattern == 'filter':
         #     img_fp_all_new = []
-        #     poses_all_new = []
         #     for idx in self.calib['keep_id'][0, :]:
         #         img_fp_all_new.append(img_fp_all[idx])
-        #         poses_all_new.append(poses_all[idx])
         #         keep_idxs.append(idx)
         #     img_fp_all = img_fp_all_new
-        #     poses_all = poses_all_new
         if sampling_pattern.split('_')[0] == 'first':
             first_val = int(sampling_pattern.split('_')[-1])
             img_fp_all = img_fp_all[:first_val]
-            poses_all = poses_all[:first_val]
             keep_idxs = list(range(first_val))
         elif sampling_pattern.split('_')[0] == 'after':
             after_val = int(sampling_pattern.split('_')[-1])
             keep_idxs = list(range(after_val, len(img_fp_all)))
             img_fp_all = img_fp_all[after_val:]
-            poses_all = poses_all[after_val:]
         elif sampling_pattern.split('_')[0] == 'skip':
             skip_val = int(sampling_pattern.split('_')[-1])
             img_fp_all_new = []
-            poses_all_new = []
             for idx in range(0, len(img_fp_all), skip_val):
                 img_fp_all_new.append(img_fp_all[idx])
-                poses_all_new.append(poses_all[idx])
                 keep_idxs.append(idx)
             img_fp_all = img_fp_all_new
-            poses_all = poses_all_new
         elif sampling_pattern.split('_')[0] == 'skipinv':
             skip_val = int(sampling_pattern.split('_')[-1])
             img_fp_all_new = []
-            poses_all_new = []
             for idx in range(0, len(img_fp_all)):
                 if idx % skip_val == 0:
                     continue
                 img_fp_all_new.append(img_fp_all[idx])
-                poses_all_new.append(poses_all[idx])
                 keep_idxs.append(idx)
             img_fp_all = img_fp_all_new
-            poses_all = poses_all_new
         elif sampling_pattern.split('_')[0] == 'only':
             choose_idx = int(sampling_pattern.split('_')[-1])
             img_fp_all = [img_fp_all[choose_idx]]
-            poses_all = [poses_all[choose_idx]]
             keep_idxs.append(choose_idx)
         else:
             raise ValueError("Unknown sampling pattern!")
         keep_idxs = np.array(keep_idxs)
-    return img_fp_all, poses_all, keep_idxs
+    return img_fp_all, keep_idxs
 
 def square_img_crop(img):
     min_dim = np.amin(img.shape[:2])

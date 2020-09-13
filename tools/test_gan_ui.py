@@ -268,12 +268,12 @@ def hello_world():
     global rotate_count
     if is_rotate:
         view_dataset.calib['poses'][rotate_count, ...] = global_view_data['pose'][0, ...].clone().detach().cpu().numpy()
-        view_dataset.calib['projs'][rotate_count, ...] = view_dataset.calib['projs'][0, ...]
-        view_dataset.calib['dist_coeffs'][rotate_count, ...] = view_dataset.calib['dist_coeffs'][0, ...]
+        view_dataset.calib['projs'][rotate_count, ...] = global_view_data['proj'][0, ...].clone().detach().cpu().numpy()
+        view_dataset.calib['dist_coeffs'][rotate_count, ...] = global_view_data['dist_coeff'][0, ...].clone().detach().cpu().numpy()
         rotate_count += 1
         if rotate_count == 360:
             import scipy
-            scipy.io.savemat('/home/chenxin/relightable-nr/data/200909_fashion_small/calib/calib_0911_rendered360.mat', view_dataset.calib)
+            scipy.io.savemat('/home/chenxin/relightable-nr/data/200909_fashion_small/calib/calib_0911_rendered360_fix2.mat', view_dataset.calib)
 
 
     # inference
